@@ -109,6 +109,7 @@ while True:
 # Value for laser 4 frequency step size check
 laser_4_step = float(input("Enter the frequency step size for laser 4 (GHz): "))
 
+
 # Value for the final frequency stepped to (i.e. 1 GHz step size with final frequency of 100 GHz will have 100 steps)
 #final_freq = float(input("Enter the final frequency (GHz): "))
 num_steps = int(input("Enter the number of steps you would like the program to take: "))
@@ -122,6 +123,9 @@ elif user_input == 'C':
 else:
     print("Invalid input. Using default frequency threshold of 1 GHz.")
     freq_threshold = 1
+
+# Enter a delay time for the lasers to stabilize
+delay = int(input("Enter the delay time for the lasers to stabilize (seconds): "))
 
 # Lists to store step number, beat frequency, and laser 4 wavelength
 steps = []
@@ -215,7 +219,7 @@ try:
             elif 1.5 < esa_beat_freq < 5:
                 laser_4_new_freq = laser_4_freq - (0.8 * 1e9)
             elif 1 <= esa_beat_freq < 1.5:
-                laser_4_new_freq = laser_4_freq - (.1 * 1e9)
+                laser_4_new_freq = laser_4_freq - (.2 * 1e9)
             elif esa_beat_freq < 1: # the value is within the threshold so break out of the loop as to not update the wavelength again unnecessarily
                 break
 
@@ -232,11 +236,14 @@ try:
     last_beat_freq = calibration_freq
 
     plt.ion()  # Turn on interactive mode for live plotting
-    fig, ax1 = plt.subplots(figsize=(10, 6))
 
+    # Create subplots
+    fig, (ax1, ax3) = plt.subplots(2, 1, figsize=(10, 12))
+
+    # Setup first subplot (ax1)
     color = 'tab:blue'
     ax1.set_xlabel('Step Number')
-    ax1.set_ylabel('beat Frequency (GHz)', color=color)
+    ax1.set_ylabel('Beat Frequency (GHz)', color=color)
     line1, = ax1.plot([], [], marker='o', linestyle='-', color=color)
     ax1.tick_params(axis='y', labelcolor=color)
     ax1.grid(True)
@@ -246,6 +253,15 @@ try:
     ax2.set_ylabel('Laser 4 Wavelength (nm)', color=color)
     line2, = ax2.plot([], [], marker='x', linestyle='--', color=color)
     ax2.tick_params(axis='y', labelcolor=color)
+
+    # Setup second subplot (ax3)
+    color = 'tab:blue'
+    ax3.set_xlabel('Beat Frequency (GHz)')
+    ax3.set_ylabel('RF Power (dBm)', color=color)
+    line3, = ax3.plot([], [], marker='o', linestyle='-', color=color)
+    ax3.tick_params(axis='y', labelcolor=color)
+    ax3.grid(True)
+
 
     fig.tight_layout()  # otherwise the right y-label is slightly clipped
     plt.title(f"beat Frequency and Laser 4 Wavelength vs Step Number (Starting Wavelength for Laser 3: {laser_3_WL:.2f} nm)")
@@ -295,14 +311,17 @@ try:
 
         line1.set_data(steps, beat_freqs)
         line2.set_data(steps, laser_4_wavelengths)
+        line3.set_data(beat_freqs, [x[1] for x in beat_freq_and_power])
         ax1.relim()
         ax2.relim()
+        ax3.relim()
         ax1.autoscale_view()
         ax2.autoscale_view()
+        ax3.autoscale_view()
         plt.draw()
         plt.pause(0.1)
 
-        time.sleep(1)
+        time.sleep(delay) # Delay for the lasers to stabilize based on user input
 
     time.sleep(5)
     plt.ioff()  # Turn off interactive mode
@@ -317,27 +336,21 @@ print("Connection closed.")
 # Static plot at the end: beat Frequency and Laser 4 Wavelength vs Step Number
 line1.set_data(steps, beat_freqs)
 line2.set_data(steps, laser_4_wavelengths)
+line3.set_data(beat_freqs, [x[1] for x in beat_freq_and_power])
 ax1.relim()
 ax2.relim()
 ax1.autoscale_view()
 ax2.autoscale_view()
-plt.draw()
-plt.show()
 
 # Plot power vs beat frequency
 beat_freq_and_power.sort(key=lambda x: x[0]) # sort the values by beat frequency
 beat_freqs_pow, powers = zip(*beat_freq_and_power) # unpack the sorted values
 
-fig, ax1 = plt.subplots(figsize=(10, 6))
+line3.set_data(beat_freqs_pow, powers)
+ax3.relim()
+ax3.autoscale_view()
 
-color = 'tab:blue'
-ax1.set_xlabel('Beat Frequency (GHz)')
-ax1.set_ylabel('Power Measurement (dBm)', color=color)
-ax1.plot(beat_freqs_pow, powers, marker='o', linestyle='-', color=color)
-ax1.tick_params(axis='y', labelcolor=color)
-ax1.grid(True)
-
-fig.tight_layout()  # otherwise the right y-label is slightly clipped
-plt.title(f"Delta Frequency and Laser 4 Wavelength vs Step Number (Starting Wavelength for Laser 3: {laser_3_WL:.2f} nm)")
+plt.draw()
 plt.show()
+
 
