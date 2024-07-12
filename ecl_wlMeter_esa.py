@@ -114,8 +114,11 @@ try:
         else:
             print("Invalid input. Please enter a wavelength between 1540 and 1640 nm.")
 
-    # Value for laser 4 frequency step size check
-    laser_4_step = float(input("Enter the frequency step size for laser 4 (GHz): "))
+    # Start beat frequency 
+    start_freq = float(input("Enter the starting beat frequency (GHz): "))
+
+    # End beat frequency
+    end_freq = float(input("Enter the final beat frequency (GHz): "))
 
     # Value for the final frequency stepped to (i.e. 1 GHz step size with final frequency of 100 GHz will have 100 steps)
     # final_freq = float(input("Enter the final frequency (GHz): "))
@@ -166,7 +169,6 @@ try:
 
         calibration_freq = freq_threshold  # Set the calibration frequency to whatever the threshold was set to be
 
-
         # Store the initial wavelength of Laser 4
         initial_laser_4_WL = laser_4_WL
         # Additional variables to track consecutive increases
@@ -180,6 +182,11 @@ try:
         last_beat_freq = None
         below_threshold = False
 
+        current_freq = None
+
+        ############################################################################################################################################################
+        ####                                                   CALIBRATION TO GET BEAT FREQUENCY WITHIN 1 GHz                                                    ###
+        ############################################################################################################################################################
         # Loop through until the starting frequency is within the given threshold
         while calibration_freq >= freq_threshold:
 
@@ -210,7 +217,7 @@ try:
                     consecutive_increases = 0
                     calibration_freq = freq_threshold  # Restart calibration
                     last_beat_freq = None  # Reset last beat frequency
-                    time.sleep(1)  # Give some time before restarting the loop
+                    time.sleep(5)  # Give some time before restarting the loop
                     continue
             else:
                 consecutive_increases = 0
@@ -267,7 +274,7 @@ try:
                     exit_program(ecl_adapter)
 
             elif esa_beat_freq < 50 and wl_meter_beat_freq < 50:
-                print(f"Beat Frequency (ESA): {esa_beat_freq} GHz")
+                print(f"Beat Frequency (ESA): {round(esa_beat_freq,1)} GHz")
                 calibration_freq = esa_beat_freq
 
                 if esa_beat_freq > 40:
@@ -299,11 +306,53 @@ try:
 
             time.sleep(1)
 
+        ############################################################################################################################################################
+        ####                                                   SECOND LOOP TO GET UP TO STARTING FREQUENCY IF NEEDED                                             ###
+        ############################################################################################################################################################
+
+        while abs(calibration_freq - start_freq) > freq_threshold:
+
+            if start_freq <= 1: # If the starting frequency is 1 GHz or less, break out of the loop, already calibrated
+                break
+
+            #Measure beat frequency using wavelength meter and ESA
+            wl_meter_beat_freq = measure_wavelength_beat(wavelength_meter)
+            esa_beat_freq = measure_peak_frequency(spectrum_analyzer)
+
+            # If wl_meter_beat_freq is None, it means the wavelength meter failed to measure, so we use the ESA value
+            if wl_meter_beat_freq is None:
+                wl_meter_beat_freq = esa_beat_freq
+
+            if wl_meter_beat_freq is None or esa_beat_freq is None:
+                continue
+
+            current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+
+            laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
+
+            print(f"Current Beat Frequency: {round(current_freq,1)} GHz")
+            laser_4_new_freq = laser_4_freq - ((abs(start_freq - current_freq) * 1e9))/2
+            laser_4_WL = (c / laser_4_new_freq) * 1e9
+
+
+            # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
+            if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
+                set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+            else:
+                print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
+                exit_program(ecl_adapter)
+            
+            calibration_freq = current_freq # Update calibration frequency to the current frequency
+
+            time.sleep(1) # Small delay before next iteration
 
 
         laser_4_cal = round(laser_4_WL,3) # Store the calibrated wavelength for laser 4 to use in txt file header
 
         time.sleep(5)
+        ############################################################################################################################################################
+        ####                                             LOOP THROUGH STEPS, UPDATE WAVELENGTHS, TAKE MEASUREMENTS                                               ###
+        ############################################################################################################################################################
 
         print("CALIBRATION COMPLETE, STARTING FREQUENCY WITHIN THRESHOLD. BEGINNING STEPS...")
 
@@ -375,6 +424,9 @@ try:
             max_attempts = 3
             attempts = 0
             success = False
+
+            laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 wavelength
+
             # Added loop to retry the measurement if it fails, have encountered random errors with the power sensor
             while attempts < max_attempts and not success:
                 try:
@@ -420,6 +472,8 @@ try:
             set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
             print(f"(step {step + 1}/{num_steps})")
 
+
+            # Update the plots with the new data
             line1.set_data(steps, beat_freqs)
             line2.set_data(steps, laser_4_wavelengths)
             line3.set_data(beat_freqs, [x[1] for x in beat_freq_and_power])
@@ -464,36 +518,42 @@ try:
     plt.draw()
     plt.show()
 
-    # Save data to a text file
-    # Get user input for file name
-    filename_input= input("Enter your desired file name: ").strip().upper()
-    extension = '.txt'
-    counter = 1
+    # User input for frequency threshold
+    output_input = input("Would you like to output the data to a .txt file? (Yes/No): ").strip().upper()
+    while output_input not in ['YES', 'NO', 'Y', 'N']: # Loop until get a valid input
+        output_input = input("Invalid input. Would you like to output the data to a .txt file? (Yes (Y) / No (N)): ").strip().upper()
+    if user_input == 'Yes' or user_input == 'Y':
+        # Get user input for file name
+        filename_input= input("Enter your desired file name: ").strip().upper()
+        extension = '.txt'
+        counter = 1
 
-    txt_filename = f'{filename_input}{extension}'
-    while os.path.exists(txt_filename):
-        txt_filename = f'{filename_input}_{counter}{extension}'
-        counter += 1
+        txt_filename = f'{filename_input}{extension}'
+        while os.path.exists(txt_filename):
+            txt_filename = f'{filename_input}_{counter}{extension}'
+            counter += 1
 
 
-    device_num = int(input("Enter the device number: "))
-    comment = input("Enter any trial comments: ").strip().upper()
-    keithley_voltage = float(input("Enter the voltage for the Keithley: "))
+        device_num = int(input("Enter the device number: "))
+        comment = input("Enter any trial comments: ").strip().upper()
+        keithley_voltage = float(input("Enter the voltage for the Keithley: "))
 
 
-    with open(txt_filename, 'w') as f:
-        f.write("DEVICE NUMBER: " + str(device_num) + "\n")
-        f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
-        f.write("COMMENTS: " + comment + "\n")
-        f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " +str(laser_4_cal) + " (nm) :" + " DELAY: " + str(delay) + " (s) " + "\n")
-        f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
-        f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
-        f.write("\n")
-        f.write("F_BEAT(GHz)\tRF POW (dBm)\tCURRENT (A)\n")
-        for i in range(len(steps)):
-            f.write(f"{beat_freqs_pow[i]}\t\t{powers[i]}\t\t{currents[i]}\n") # Write the beat frequency, power, and current to the file in columns
+        with open(txt_filename, 'w') as f:
+            f.write("DEVICE NUMBER: " + str(device_num) + "\n")
+            f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
+            f.write("COMMENTS: " + comment + "\n")
+            f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " +str(laser_4_cal) + " (nm) :" + " DELAY: " + str(delay) + " (s) " + "\n")
+            f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
+            f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
+            f.write("\n")
+            f.write("F_BEAT(GHz)\tRF POW (dBm)\tCURRENT (A)\n")
+            for i in range(len(steps)):
+                f.write(f"{beat_freqs_pow[i]}\t\t{powers[i]}\t\t{currents[i]}\n") # Write the beat frequency, power, and current to the file in columns
 
-    print(f"Data saved to {txt_filename}")
+        print(f"Data saved to {txt_filename}")
+
+    
 finally:
     # Ensure all resources are closed
     try:
