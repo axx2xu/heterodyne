@@ -413,8 +413,8 @@ try:
         # Setup second subplot (ax3)
         color = 'tab:blue'
         ax3.set_xlabel('Beat Frequency (GHz)')
-        ax3.set_ylabel('RF Power (dBm)', color=color)
-        ax3.set_title('RF Power vs Beat Frequency')
+        ax3.set_ylabel('Raw RF Power (dBm)', color=color)
+        ax3.set_title('Raw RF Power vs Beat Frequency')
         line3, = ax3.plot([], [], marker='o', linestyle='-', color=color)
         ax3.tick_params(axis='y', labelcolor=color)
         ax3.grid(True)
@@ -440,6 +440,8 @@ try:
         fig.tight_layout()
         # Add a centered title for the entire figure
         
+        # Calculate step size
+        laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 wavelength
 
         for step in range(num_steps):
             beat_freq = measure_peak_frequency(spectrum_analyzer) if last_beat_freq < 45 else measure_wavelength_beat(wavelength_meter)
@@ -462,8 +464,6 @@ try:
             max_attempts = 3
             attempts = 0
             success = False
-
-            laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 wavelength
 
             # Measure the VOA P actual
             # Trigger a measurement
@@ -579,8 +579,8 @@ try:
     s2p_file = rf.Network(filepath)
 
     # Gather s12 and s21 data
-    s12 = s2p_file.s[:, 0, 1]
-    s21 = s2p_file.s[:, 1, 0]
+    s12 = s2p_file.s_db[:,0,1]
+    s21 = s2p_file.s_db[:,1,0]
     s_avg = (s12 + s21) / 2
 
     frequencies = s2p_file.f
@@ -603,6 +603,9 @@ try:
         s12 = 20 * np.log10(np.abs(s12))
         s21 = 20 * np.log10(np.abs(s21))
         s_avg = 20 * np.log10(np.abs(s_avg))
+    
+    elif(data_format == 'DB'): 
+        pass
 
     # Interpolate the data
     f = interp1d(frequencies, s_avg, kind='cubic')
@@ -678,9 +681,9 @@ try:
             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
             f.write("\n")
-            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRF POW (dBm)\t Cal RF POW (dBm)\t P Actual (dBm)\n")
+            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRaw RF POW (dBm)\t Cal RF POW (dBm)\t P Actual (dBm)\n")
             for i in range(len(steps)):
-                f.write(f"{beat_freqs_pow[i]}\t\t{photo_currents[i]}\t\t{powers[i]}\t\t{calibrated_rf[i]}\t\t\t{p_actuals[i]}\n") # Write the beat frequency, power, and current to the file in columns
+                f.write(f"{beat_freqs_pow[i]}\t\t{photo_currents[i]}\t\t{powers[i]}\t\t\t{calibrated_rf[i]}\t\t\t{p_actuals[i]}\n") # Write the beat frequency, power, and current to the file in columns
 
         print(f"Data saved to {txt_filename}")
 
