@@ -106,12 +106,15 @@ wavelength_meter = rm.open_resource('GPIB0::20::INSTR')  # Update with your actu
 spectrum_analyzer = rm.open_resource('GPIB0::18::INSTR')  # Update with your actual GPIB address
 keithley = rm.open_resource('GPIB0::24::INSTR')  # Update with your actual GPIB address
 RS_power_sensor = rm.open_resource('RSNRP::0x00a8::100940::INSTR') # Update with your actual VISA address for the RS NRP-Z58 sensor
+voa = rm.open_resource('GPIB0::26::INSTR')  # Update with your actual GPIB address
 
 # Set timeout to 5 seconds (5000 milliseconds)
 ecl_adapter.timeout = 5000
 wavelength_meter.timeout = 5000
 spectrum_analyzer.timeout = 5000
 keithley.timeout = 5000
+voa.timeout = 5000
+
 try:
     # Set the Keithley to local mode
     keithley.write(":SYSTem:LOCal")
@@ -462,6 +465,12 @@ try:
 
             laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 wavelength
 
+            # Measure the VOA P actual
+            # Trigger a measurement
+            p_actual = voa.query('READ:POW?')
+            p_actual = float(p_actual) # convert to float so it can be rounded
+            p_actual = round(p_actual,3) # round 3 decimal places
+
             # Added loop to retry the measurement if it fails, have encountered random errors with the power sensor
             while attempts < max_attempts and not success:
                 try:
@@ -484,7 +493,7 @@ try:
                     beat_freq = round(beat_freq, 1)  # Round beat frequency to 1 decimal place
                     current = float(current)  # Convert current back to float
 
-                    beat_freq_and_power.append((beat_freq, output_dbm, current))
+                    beat_freq_and_power.append((beat_freq, output_dbm, current, p_actual))
                     success = True  # Measurement succeeded
                 except ValueError as e:
                     print(f"Error processing measurement at step {step + 1}, attempt {attempts + 1}: {e}")
@@ -533,7 +542,7 @@ try:
 
     # Sort the data by beat frequency
     beat_freq_and_power.sort(key=lambda x: x[0])
-    beat_freqs_pow, powers, photo_currents = zip(*beat_freq_and_power)
+    beat_freqs_pow, powers, photo_currents, p_actuals = zip(*beat_freq_and_power)
 
     ############################################################################################################################################################
     #                                   Calculate Calibrated RF from network analyzer file
@@ -669,9 +678,9 @@ try:
             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
             f.write("\n")
-            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRF POW (dBm)\t Cal RF POW (dBm)\n")
+            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRF POW (dBm)\t Cal RF POW (dBm)\t P Actual (dBm)\n")
             for i in range(len(steps)):
-                f.write(f"{beat_freqs_pow[i]}\t\t{photo_currents[i]}\t\t{powers[i]}\t\t{calibrated_rf[i]}\n") # Write the beat frequency, power, and current to the file in columns
+                f.write(f"{beat_freqs_pow[i]}\t\t{photo_currents[i]}\t\t{powers[i]}\t\t{calibrated_rf[i]}\t\t\t{p_actuals[i]}\n") # Write the beat frequency, power, and current to the file in columns
 
         print(f"Data saved to {txt_filename}")
 
@@ -702,6 +711,11 @@ finally:
         RS_power_sensor.close()
     except Exception as e:
         print(f"Error closing RS_power_sensor: {e}")
+
+    try:
+        voa.close()
+    except Exception as e:
+        print(f"Error closing VOA: {e}")
 
     print("All resources closed.")
     sys.exit(0)
