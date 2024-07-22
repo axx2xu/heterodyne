@@ -12,11 +12,41 @@ import openpyxl
 from scipy.interpolate import interp1d
 
 ################################################################################################################################################################################
-#                         **** THIS IS A TEST CODE TO TEST THE CONNECTION TO THE ECL MODULE, WAVELENGTH METER, AND ESA, IT CURRENTLY FUNCTIONS GENERALLY AS EXPECTED
-#                         **** HOWEVER AT THIS TIME IT ONLY OUTPUTS THE BEAT FREQUENCY
-#                         ****         MAKE SURE TO TURN ON THE BEAT WL MODE ON THE WAVELENGTH METER BEFORE RUNNING THE PROGRAM OR IT WILL NOT WORK
+#                                   **** THIS PROGRAM RUNS AUTOMATIC CALIBRATION AND LOOPING FOR BEAT FREQUENCY MEASUREMENTS ****
+#                             **** THE PROGRAM RECORDS THE BEAT FREQUENCY, PHOTOCURRENT, RAW RF POWER, AND CALIBRATED RF POWER ****
+#                        **** THE PROGRAM ALSO PLOTS THE BEAT FREQUENCY, LASER 4 WAVELENGTH, RAW RF POWER, AND CALIBRATED RF POWER **** 
+#                                   **** THE DATA IS THEN OUTPUT TO A .txt FILE IF THE USER SAYS YES WHEN PROMPTED ****
 #
 ################################################################################################################################################################################
+
+
+
+############################################################################################################################################################
+####                              FILE PATHS AND GPIB ADDRESS THAT NEED TO BE MANUALLY UPDATED BY THE USER                                               ###
+############################################################################################################################################################
+
+filepath = 'C:/Users/Tommy/Downloads/1_2_1mm_cable_BW_20240306_ft4xx.s2p' # s2p file path for RF probe loss
+excel_filepath = 'C:/Users/Tommy/Downloads/probe_loss.xlsx' # Excel file path for RF link loss
+
+# Initialize the VISA resource manager
+rm = pyvisa.ResourceManager()
+
+# List all connected VISA devices (Optional: To verify connections)
+print("Connected devices:", rm.list_resources())
+
+# Create a VISA adapter for the ECL laser and wavelength meter
+# *** The GPIB should always be the same, so these should not need to be changed ***
+
+ecl_adapter = rm.open_resource('GPIB0::10::INSTR')  # Update with your actual GPIB address
+wavelength_meter = rm.open_resource('GPIB0::20::INSTR')  # Update with your actual GPIB address
+spectrum_analyzer = rm.open_resource('GPIB0::18::INSTR')  # Update with your actual GPIB address
+keithley = rm.open_resource('GPIB0::24::INSTR')  # Update with your actual GPIB address
+RS_power_sensor = rm.open_resource('RSNRP::0x00a8::100940::INSTR') # Update with your actual VISA address for the RS NRP-Z58 sensor
+voa = rm.open_resource('GPIB0::26::INSTR')  # Update with your actual GPIB address
+
+############################################################################################################################################################
+####                                                  METHODS FOR REPEATED MEASUREMENT OR INSTRUMENT USE                                                 ###
+############################################################################################################################################################
 
 # Disconnects from instruments and exits the program using (Ctrl + C)
 def exit_program(ecl_adapter):
@@ -34,15 +64,15 @@ def measure_peak_frequency(spectrum_analyzer):
     try:
         """Perform peak search and return the peak frequency within the current span."""
         spectrum_analyzer.write('MKPK HI')
-        time.sleep(0.5)  # Allow time for the peak search to complete
+        time.sleep(0.4)  # Allow time for the peak search to complete
         peak_freq_1 = spectrum_analyzer.query('MKF?')
-        time.sleep(0.5)
+        time.sleep(0.4)
         spectrum_analyzer.write('MKPK HI')
-        time.sleep(0.5)  # Allow time for the peak search to complete
+        time.sleep(0.4)  # Allow time for the peak search to complete
         peak_freq_2 = spectrum_analyzer.query('MKF?')
-        time.sleep(0.5)
+        time.sleep(0.4)
         spectrum_analyzer.write('MKPK HI')
-        time.sleep(0.5)  # Allow time for the peak search to complete
+        time.sleep(0.4)  # Allow time for the peak search to complete
         peak_freq_3 = spectrum_analyzer.query('MKF?')
 
         peak_freq = min(peak_freq_1, peak_freq_2, peak_freq_3)
@@ -91,22 +121,24 @@ def read_excel_data(filepath):
 
     return np.array(frequency), np.array(loss)
 
-
-# Initialize the VISA resource manager
-rm = pyvisa.ResourceManager()
-
-# List all connected VISA devices (Optional: To verify connections)
-print("Connected devices:", rm.list_resources())
-
-# Create a VISA adapter for the ECL laser and wavelength meter
-# *** The GPIB should always be the same, so these should not need to be changed ***
-
-ecl_adapter = rm.open_resource('GPIB0::10::INSTR')  # Update with your actual GPIB address
-wavelength_meter = rm.open_resource('GPIB0::20::INSTR')  # Update with your actual GPIB address
-spectrum_analyzer = rm.open_resource('GPIB0::18::INSTR')  # Update with your actual GPIB address
-keithley = rm.open_resource('GPIB0::24::INSTR')  # Update with your actual GPIB address
-RS_power_sensor = rm.open_resource('RSNRP::0x00a8::100940::INSTR') # Update with your actual VISA address for the RS NRP-Z58 sensor
-voa = rm.open_resource('GPIB0::26::INSTR')  # Update with your actual GPIB address
+def read_s2p_header(filepath):
+    with open(filepath, 'r') as file:
+        lines = file.readlines()
+    
+    freq_unit = 'Hz'
+    data_format = 'dB'
+    
+    for line in lines:
+        if line.startswith('#'):
+            parts = line.split()
+            for i, part in enumerate(parts):
+                if part.lower() in ['hz', 'khz', 'mhz', 'ghz']:
+                    freq_unit = part.lower()
+                elif part.lower() in ['ri', 'db', 'ma']:
+                    data_format = part.upper()
+            break
+    
+    return freq_unit, data_format
 
 # Set timeout to 5 seconds (5000 milliseconds)
 ecl_adapter.timeout = 5000
@@ -179,10 +211,6 @@ try:
 
         c = 299792458  # Speed of light in m/s
 
-        # Turn on beat wavelength measurement mode
-        wavelength_meter.write(":CALC3:DELTA:WAV:STAT ON")  # THIS DOES NOT SEEM TO WORK, TURN THE DELTA WL MODE ON MANUALLY BEFORE RUNNING THE PROGRAM
-        time.sleep(1)  # Small delay to ensure command is processed
-
         last_beat_freq = 0  # Initialize the last beat frequency to 0
 
         # Set the reference frequency to laser 3
@@ -244,29 +272,29 @@ try:
                     continue
             else:
                 consecutive_increases = 0
+            
+            # # Specific logic for the case where esa_beat_freq < 1       # NOT BEING USED AS IT DIDN'T SEEM TO MAKE A DIFFERENCE
+            # if esa_beat_freq < 1:
+            #     if not below_threshold:
+            #         below_threshold = True  # Mark that we have entered the below threshold condition
+            #         #last_beat_freq = current_freq  # Initialize last_beat_freq for this condition
 
-            # Specific logic for the case where esa_beat_freq < 1
-            if esa_beat_freq < 1:
-                if not below_threshold:
-                    below_threshold = True  # Mark that we have entered the below threshold condition
-                    #last_beat_freq = current_freq  # Initialize last_beat_freq for this condition
+            #     if current_freq < last_beat_freq:
+            #         # If the beat frequency is still decreasing, continue to increase the wavelength
+            #         laser_4_freq = laser_4_freq - (0.2 * 1e9)
+            #         laser_4_WL = (c / laser_4_freq) * 1e9  # Set the new wavelength
 
-                if current_freq < last_beat_freq:
-                    # If the beat frequency is still decreasing, continue to increase the wavelength
-                    laser_4_freq = laser_4_freq - (0.4 * 1e9)
-                    laser_4_WL = (c / laser_4_freq) * 1e9  # Set the new wavelength
-
-                    # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
-                    if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
-                        set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
-                    else:
-                        print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                        exit_program(ecl_adapter)
-                else:
-                    # If the frequency starts increasing, break out of the loop
-                    break
-            else:
-                below_threshold = False  # Reset the below threshold condition if we are above 1 GHz
+            #         # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
+            #         if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
+            #             set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+            #         else:
+            #             print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
+            #             exit_program(ecl_adapter)
+            #     else:
+            #         # If the frequency starts increasing, break out of the loop
+            #         break
+            # else:
+            #     below_threshold = False  # Reset the below threshold condition if we are above 1 GHz
 
             # Update last_beat_freq at the end of the loop
             last_beat_freq = current_freq
@@ -317,7 +345,16 @@ try:
                 # elif esa_beat_freq < 1:  # the value is within the threshold so break out of the loop as to not update the wavelength again unnecessarily
                 #     break
                 else:
-                    continue
+                    # If under 1GHz beat frequency, update by .8 GHz to get to the other side of the 0 threshold, then break out of the loop
+                    laser_4_new_freq = laser_4_freq - (.8 * 1e9)
+                    laser_4_WL = (c / laser_4_new_freq) * 1e9
+                    # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
+                    if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
+                        set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+                    else:
+                        print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
+                        exit_program(ecl_adapter)
+                    break
 
                 laser_4_WL = (c / laser_4_new_freq) * 1e9
                 # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
@@ -334,10 +371,11 @@ try:
         ############################################################################################################################################################
 
         update_laser = True
+        last_freq = None
 
         while abs(calibration_freq - start_freq) > freq_threshold:
 
-            if start_freq <= 1: # If the starting frequency is 1 GHz or less, break out of the loop, already calibrated
+            if start_freq < 1: # If the starting frequency is 1 GHz or less, break out of the loop, already calibrated
                 break
 
             #Measure beat frequency using wavelength meter and ESA
@@ -352,13 +390,12 @@ try:
                 continue
 
             current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+            print(f"Current Beat Frequency: {round(current_freq,1)} GHz")
 
             laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
-
-            print(f"Current Beat Frequency: {round(current_freq,1)} GHz")
-            laser_4_new_freq = laser_4_freq - ((abs(start_freq - current_freq) * 1e9))/2
-            laser_4_WL = (c / laser_4_new_freq) * 1e9
-
+            laser_4_new_freq = laser_4_freq - ((abs(start_freq - current_freq) * 1e9))/2 # Update the frequency by half the difference between the current and starting frequency
+            laser_4_WL = (c / laser_4_new_freq) * 1e9 # Set the new wavelength
+ 
 
             if(abs(current_freq - start_freq)) <= freq_threshold: # If the current frequency is within the threshold, don't update laser 4 again
                 update_laser = False
@@ -374,10 +411,12 @@ try:
                 calibration_freq = current_freq # Update calibration frequency to the current frequency
 
             time.sleep(1) # Small delay before next iteration
-
-
+            last_freq = current_freq # Update last frequency
+        
+        
         laser_4_cal = round(laser_4_WL,3) # Store the calibrated wavelength for laser 4 to use in txt file header
-
+         # Catch the case where the beat frequency is under 1 GHz and the ESA is not working as it is too close to 0 GHz
+    
         time.sleep(5)
         ############################################################################################################################################################
         ####                                             LOOP THROUGH STEPS, UPDATE WAVELENGTHS, TAKE MEASUREMENTS                                               ###
@@ -385,7 +424,7 @@ try:
 
         print("CALIBRATION COMPLETE, STARTING FREQUENCY WITHIN THRESHOLD. BEGINNING STEPS...")
 
-        last_beat_freq = calibration_freq
+        last_beat_freq = calibration_freq # Initialize last beat frequency to the current frequency
 
         plt.ion()  # Turn on interactive mode for live plotting
 
@@ -437,16 +476,43 @@ try:
         ax5.tick_params(axis='y', labelcolor=color)
         ax5.grid(True)
 
+        
+
         fig.tight_layout()
         # Add a centered title for the entire figure
         
         # Calculate step size
         laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 wavelength
 
+        # Get initial photocurrent for text output
+        # MEASURE CURRENT FROM KEITHLEY
+        response = keithley.query(":MEASure:CURRent?")
+        initial_current_values = response.split(',')
+
+        if len(initial_current_values) > 1:
+            initial_current = float(initial_current_values[1])
+            initial_current = f"{initial_current:.2e}"  # Format for display
+
+        # Set the Keithley back to local mode
+        keithley.write(":SYSTem:LOCal")
+
         for step in range(num_steps):
             beat_freq = measure_peak_frequency(spectrum_analyzer) if last_beat_freq < 45 else measure_wavelength_beat(wavelength_meter)
             if beat_freq is None:
                 continue
+
+            if(step < 5 and start_freq < 5 and beat_freq > 10):
+                laser_4_freq = c / (laser_4_WL * 1e-9)
+                laser_4_new_freq = laser_4_freq - (0.3 * 1e9) # Within the threshold where ESA doesn't work, so just decrease by 0.1 GHz
+                laser_4_WL = (c / laser_4_new_freq) * 1e9
+                set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+                time.sleep(delay) # Delay for the lasers to stabilize
+
+                # Re-measure the beat frequency
+                beat_freq = measure_peak_frequency(spectrum_analyzer) if last_beat_freq < 45 else measure_wavelength_beat(wavelength_meter)
+                if beat_freq is None:
+                    continue
+
             print(f"Beat Frequency: {round(beat_freq,1)} GHz")
 
             # MEASURE CURRENT FROM KEITHLEY
@@ -470,6 +536,7 @@ try:
             p_actual = voa.query('READ:POW?')
             p_actual = float(p_actual) # convert to float so it can be rounded
             p_actual = round(p_actual,3) # round 3 decimal places
+            voa.write('SYST:LOC')  # Put the VOA back into local mode so the attenuation can be adjusted
 
             # Added loop to retry the measurement if it fails, have encountered random errors with the power sensor
             while attempts < max_attempts and not success:
@@ -479,20 +546,27 @@ try:
                     RS_power_sensor.write('SENS:FUNC "POW:AVG"')
                     RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')  # Update with new beat frequency
                     RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
-                    RS_power_sensor.write('SENS:AVER:COUN 16')
                     RS_power_sensor.write('SENS:AVER:STAT ON')
                     RS_power_sensor.write('SENS:AVER:TCON REP')
                     RS_power_sensor.write('SENS:POW:AVG:APER 5e-3')
-                    RS_power_sensor.write('INIT:IMM')
-                    time.sleep(1) # Wait for the measurement to complete
-                    output = RS_power_sensor.query('TRIG:IMM')
-                    output = output.split(',')[0]  # split the output to only get first value (power in Watts)
+
+                    rf_outputs = []
+
+                    for i in range(5):
+                        RS_power_sensor.write('INIT:IMM')
+                        time.sleep(0.1) # Wait for the measurement to complete
+                        output = RS_power_sensor.query('TRIG:IMM')
+                        output = output.split(',')[0]  # split the output to only get first value (power in Watts)
+                        rf_outputs.append(float(output))
+                        time.sleep(0.1) # Wait for the measurement to complete
+                    
+                    output = sum(rf_outputs) / len(rf_outputs)  # Calculate the average of the 5 measurements
                     output_dbm = math.log10(float(output)) * 10 + 30  # convert from watts to dBm
                     
                     output_dbm = round(output_dbm, 2)  # round to 2 decimal places
                     beat_freq = round(beat_freq, 1)  # Round beat frequency to 1 decimal place
+                    
                     current = float(current)  # Convert current back to float
-
                     beat_freq_and_power.append((beat_freq, output_dbm, current, p_actual))
                     success = True  # Measurement succeeded
                 except ValueError as e:
@@ -516,7 +590,6 @@ try:
             set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
             print(f"(step {step + 1}/{num_steps})")
 
-
             # Update the plots with the new data
             line1.set_data(steps, beat_freqs)
             line2.set_data(steps, laser_4_wavelengths)
@@ -533,12 +606,15 @@ try:
             plt.draw()
             plt.pause(0.1)
 
+            last_freq = beat_freq
+
             time.sleep(delay)  # Delay for the lasers to stabilize based on user input
 
         plt.ioff()  # Turn off interactive mode
 
     except KeyboardInterrupt:
         exit_program(ecl_adapter)
+        
 
     # Sort the data by beat frequency
     beat_freq_and_power.sort(key=lambda x: x[0])
@@ -547,28 +623,7 @@ try:
     ############################################################################################################################################################
     #                                   Calculate Calibrated RF from network analyzer file
     ############################################################################################################################################################
-    def read_s2p_header(filepath):
-        with open(filepath, 'r') as file:
-            lines = file.readlines()
-        
-        freq_unit = 'Hz'
-        data_format = 'dB'
-        
-        for line in lines:
-            if line.startswith('#'):
-                parts = line.split()
-                for i, part in enumerate(parts):
-                    if part.lower() in ['hz', 'khz', 'mhz', 'ghz']:
-                        freq_unit = part.lower()
-                    elif part.lower() in ['ri', 'db', 'ma']:
-                        data_format = part.upper()
-                break
-        
-        return freq_unit, data_format
 
-    # Path to the .s2p file
-    filepath = 'C:/Users/Tommy/Downloads/1_2_1mm_cable_BW_20240306_ft4xx.s2p'
-    excel_filepath = 'C:/Users/Tommy/Downloads/probe_loss.xlsx'
 
     # Read the header to detect the units
     freq_unit, data_format = read_s2p_header(filepath)
@@ -647,10 +702,28 @@ try:
     ax5.relim()
     ax5.autoscale_view()
 
+    # Manually set y-ticks for the RF power graphs with 3 units interval
+    rf_power_min = min(powers)
+    rf_power_max = max(powers)
+    rf_power_ticks = np.arange(np.floor(rf_power_min / 3) * 3, np.ceil(rf_power_max / 3) * 3 + 3, 3)  # Generate y-ticks with 3 units interval
+
+    ax3.set_yticks(rf_power_ticks)
+    ax5.set_yticks(rf_power_ticks)
+
+    # Manually set y-ticks for the calibrated RF power graph with 3 units interval
+    calibrated_rf_min = min(calibrated_rf)
+    calibrated_rf_max = max(calibrated_rf)
+    calibrated_rf_ticks = np.arange(np.floor(calibrated_rf_min / 3) * 3, np.ceil(calibrated_rf_max / 3) * 3 + 3, 3)  # Generate y-ticks with 3 units interval
+
+    ax5.set_yticks(calibrated_rf_ticks)
+
+
     plt.draw()
     plt.show()
-
-    # User input for frequency threshold
+    ############################################################################################################################################################
+    ####                                              PROMPTED USER INPUTS FOR OUTPUTTING DATA IN .TXT FILE                                                  ###
+    ############################################################################################################################################################
+    
     output_input = input("Would you like to output the data to a .txt file? (Yes/No): ").strip().upper()
     while output_input not in ['YES', 'NO', 'Y', 'N']: # Loop until get a valid input
         output_input = input("Invalid input. Would you like to output the data to a .txt file? (Yes (Y) / No (N)): ").strip().upper()
@@ -666,24 +739,26 @@ try:
             counter += 1
 
 
-        device_num = int(input("Enter the device number: "))
-        comment = input("Enter any trial comments: ").strip().upper()
-        keithley_voltage = float(input("Enter the voltage for the Keithley: "))
-        initial_current = input("Enter the initial photocurrent: ").strip().upper()
+        device_num = int(input("Enter the device number: ")) # Get the device number from the user
+        comment = input("Enter any trial comments: ").strip().upper() # Get any comments from the user
+        keithley_voltage = keithley.query(":SOUR:VOLT:LEV:IMM:AMPL?").strip() # Get the keithley voltage from the keithley
+        keithley_voltage = f"{float(keithley_voltage):.3e}" # Format the keithley voltage for display
+        keithley.write(":SYSTem:LOCal") # Set the keithley back to local mode
+        #initial_current = input("Enter the initial photocurrent: ").strip().upper() # Get the initial photocurrent from the user
 
 
         with open(txt_filename, 'w') as f:
             f.write("DEVICE NUMBER: " + str(device_num) + "\n")
             f.write("COMMENTS: " + comment + "\n")
             f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
-            f.write("INITIAL PHOTOCURRENT: " + initial_current + " (mA)" + "\n")
+            f.write("INITIAL PHOTOCURRENT: " + str(initial_current) + " (A)" + "\n")
             f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " +str(laser_4_cal) + " (nm) :" + " DELAY: " + str(delay) + " (s) " + "\n")
             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
             f.write("\n")
-            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRaw RF POW (dBm)\t Cal RF POW (dBm)\t P Actual (dBm)\n")
+            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRaw RF POW (dBm)\tCal RF POW (dBm)\tP Actual (dBm)\n")
             for i in range(len(steps)):
-                f.write(f"{beat_freqs_pow[i]}\t\t{photo_currents[i]}\t\t{powers[i]}\t\t\t{calibrated_rf[i]}\t\t\t{p_actuals[i]}\n") # Write the beat frequency, power, and current to the file in columns
+                f.write(f"{beat_freqs_pow[i]:<10.2f}\t{float(photo_currents[i]):<10.4e}\t\t{powers[i]:<10.2f}\t\t{calibrated_rf[i]:<10.2f}\t\t{p_actuals[i]:<10.3f}\n")
 
         print(f"Data saved to {txt_filename}")
 
