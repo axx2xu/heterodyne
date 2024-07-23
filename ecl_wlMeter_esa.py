@@ -2,14 +2,17 @@ from pymeasure.adapters import VISAAdapter
 import time
 import math
 import pyvisa
+import os
 import sys
 import matplotlib.pyplot as plt
-import os
 import skrf as rf
 import numpy as np
 import pandas as pd
 import openpyxl
 from scipy.interpolate import interp1d
+import threading
+import msvcrt
+
 
 ################################################################################################################################################################################
 #                                   **** THIS PROGRAM RUNS AUTOMATIC CALIBRATION AND LOOPING FOR BEAT FREQUENCY MEASUREMENTS ****
@@ -140,6 +143,20 @@ def read_s2p_header(filepath):
     
     return freq_unit, data_format
 
+flag = True
+exit_event = threading.Event()
+
+def exit_loop():
+    global flag
+    print('Press any key to stop the loop')
+    while not exit_event.is_set():
+        if msvcrt.kbhit():  # Check for key press
+            msvcrt.getch()  # Clear the key press
+            print('Stopping the loop...')
+            flag = False
+            break
+        time.sleep(0.1)  # Check for key press every 100ms
+
 # Set timeout to 5 seconds (5000 milliseconds)
 ecl_adapter.timeout = 5000
 wavelength_meter.timeout = 5000
@@ -198,164 +215,154 @@ try:
     laser_4_wavelengths = []
     beat_freq_and_power = []
 
-    try:
-        # Set the laser wavelengths and power
-        set_laser_wavelength(ecl_adapter, 3, laser_3_WL)
-        set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
-        set_laser_power(ecl_adapter, 3, 1.00)
-        set_laser_power(ecl_adapter, 4, 1.00)
+    # Set the laser wavelengths and power
+    set_laser_wavelength(ecl_adapter, 3, laser_3_WL)
+    set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+    set_laser_power(ecl_adapter, 3, 1.00)
+    set_laser_power(ecl_adapter, 4, 1.00)
 
-        # Wait for the lasers to stabilize
-        print("Waiting for the lasers to stabilize...")
-        time.sleep(10)
+    # Wait for the lasers to stabilize
+    print("Waiting for the lasers to stabilize...")
+    time.sleep(10)
 
-        c = 299792458  # Speed of light in m/s
+    c = 299792458  # Speed of light in m/s
 
-        last_beat_freq = 0  # Initialize the last beat frequency to 0
+    last_beat_freq = 0  # Initialize the last beat frequency to 0
 
-        # Set the reference frequency to laser 3
-        laser_3_freq = c / (laser_3_WL * 1e-9)  # Convert nm to meters and calculate frequency
-        wavelength_meter.write(f":CALC3:DELTA:REF:FREQ {laser_3_freq}")
-        time.sleep(1)  # Small delay to ensure command is processed
+    # Set the reference frequency to laser 3
+    laser_3_freq = c / (laser_3_WL * 1e-9)  # Convert nm to meters and calculate frequency
+    wavelength_meter.write(f":CALC3:DELTA:REF:FREQ {laser_3_freq}")
+    time.sleep(1)  # Small delay to ensure command is processed
 
-        calibration_freq = freq_threshold  # Set the calibration frequency to whatever the threshold was set to be
+    calibration_freq = freq_threshold  # Set the calibration frequency to whatever the threshold was set to be
 
-        # Store the initial wavelength of Laser 4
-        initial_laser_4_WL = laser_4_WL
-        # Additional variables to track consecutive increases
-        consecutive_increases = 0
-        max_consecutive_increases = 3  # Number of consecutive increases to trigger recalibration
+    # Store the initial wavelength of Laser 4
+    initial_laser_4_WL = laser_4_WL
+    # Additional variables to track consecutive increases
+    consecutive_increases = 0
+    max_consecutive_increases = 3  # Number of consecutive increases to trigger recalibration
 
-        # Store the initial wavelength of Laser 4
-        initial_laser_4_WL = laser_4_WL
+    # Store the initial wavelength of Laser 4
+    initial_laser_4_WL = laser_4_WL
 
-        # Initialize last_beat_freq
-        last_beat_freq = None
-        below_threshold = False
+    # Initialize last_beat_freq
+    last_beat_freq = None
+    below_threshold = False
 
-        current_freq = None
+    current_freq = None
 
-        ############################################################################################################################################################
-        ####                                                   CALIBRATION TO GET BEAT FREQUENCY WITHIN 1 GHz                                                    ###
-        ############################################################################################################################################################
-        # Loop through until the starting frequency is within the given threshold
-        while calibration_freq >= freq_threshold:
+    ############################################################################################################################################################
+    ####                                                   CALIBRATION TO GET BEAT FREQUENCY WITHIN 1 GHz                                                    ###
+    ############################################################################################################################################################
+    # Loop through until the starting frequency is within the given threshold
+    while calibration_freq >= freq_threshold:
 
-            # Calculate the new wavelength for laser 4
-            laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
+        # Calculate the new wavelength for laser 4
+        laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
 
-            # Measure beat frequency using wavelength meter and ESA
-            wl_meter_beat_freq = measure_wavelength_beat(wavelength_meter)
-            esa_beat_freq = measure_peak_frequency(spectrum_analyzer)
+        # Measure beat frequency using wavelength meter and ESA
+        wl_meter_beat_freq = measure_wavelength_beat(wavelength_meter)
+        esa_beat_freq = measure_peak_frequency(spectrum_analyzer)
 
-            # If wl_meter_beat_freq is None, it means the wavelength meter failed to measure, so we use the ESA value
-            if wl_meter_beat_freq is None:
-                wl_meter_beat_freq = esa_beat_freq
+        # If wl_meter_beat_freq is None, it means the wavelength meter failed to measure, so we use the ESA value
+        if wl_meter_beat_freq is None:
+            wl_meter_beat_freq = esa_beat_freq
 
-            if wl_meter_beat_freq is None or esa_beat_freq is None:
-                continue
+        if wl_meter_beat_freq is None or esa_beat_freq is None:
+            continue
 
-            current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
-            #print(f"Current Beat Frequency: {current_freq} GHz")
+        current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+        #print(f"Current Beat Frequency: {current_freq} GHz")
 
-            if last_beat_freq is not None and current_freq > last_beat_freq:
-                consecutive_increases += 1
-                if consecutive_increases >= max_consecutive_increases:
-                    print("Calibration overshot the threshold, restarting calibration...")
-                    # Reset calibration variables
-                    laser_4_WL = initial_laser_4_WL  # Reset to initial wavelength
-                    set_laser_wavelength(ecl_adapter, 4, initial_laser_4_WL)  # Apply the reset wavelength to Laser 4
-                    consecutive_increases = 0
-                    calibration_freq = freq_threshold  # Restart calibration
-                    last_beat_freq = None  # Reset last beat frequency
-                    time.sleep(5)  # Give some time before restarting the loop
-                    continue
-            else:
+        if last_beat_freq is not None and current_freq > last_beat_freq:
+            consecutive_increases += 1
+            if consecutive_increases >= max_consecutive_increases:
+                print("Calibration overshot the threshold, restarting calibration...")
+                # Reset calibration variables
+                laser_4_WL = initial_laser_4_WL  # Reset to initial wavelength
+                set_laser_wavelength(ecl_adapter, 4, initial_laser_4_WL)  # Apply the reset wavelength to Laser 4
                 consecutive_increases = 0
-            
-            # # Specific logic for the case where esa_beat_freq < 1       # NOT BEING USED AS IT DIDN'T SEEM TO MAKE A DIFFERENCE
-            # if esa_beat_freq < 1:
-            #     if not below_threshold:
-            #         below_threshold = True  # Mark that we have entered the below threshold condition
-            #         #last_beat_freq = current_freq  # Initialize last_beat_freq for this condition
+                calibration_freq = freq_threshold  # Restart calibration
+                last_beat_freq = None  # Reset last beat frequency
+                time.sleep(5)  # Give some time before restarting the loop
+                continue
+        else:
+            consecutive_increases = 0
+        
+        # # Specific logic for the case where esa_beat_freq < 1       # NOT BEING USED AS IT DIDN'T SEEM TO MAKE A DIFFERENCE
+        # if esa_beat_freq < 1:
+        #     if not below_threshold:
+        #         below_threshold = True  # Mark that we have entered the below threshold condition
+        #         #last_beat_freq = current_freq  # Initialize last_beat_freq for this condition
 
-            #     if current_freq < last_beat_freq:
-            #         # If the beat frequency is still decreasing, continue to increase the wavelength
-            #         laser_4_freq = laser_4_freq - (0.2 * 1e9)
-            #         laser_4_WL = (c / laser_4_freq) * 1e9  # Set the new wavelength
+        #     if current_freq < last_beat_freq:
+        #         # If the beat frequency is still decreasing, continue to increase the wavelength
+        #         laser_4_freq = laser_4_freq - (0.2 * 1e9)
+        #         laser_4_WL = (c / laser_4_freq) * 1e9  # Set the new wavelength
 
-            #         # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
-            #         if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
-            #             set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
-            #         else:
-            #             print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-            #             exit_program(ecl_adapter)
-            #     else:
-            #         # If the frequency starts increasing, break out of the loop
-            #         break
-            # else:
-            #     below_threshold = False  # Reset the below threshold condition if we are above 1 GHz
+        #         # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
+        #         if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
+        #             set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+        #         else:
+        #             print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
+        #             exit_program(ecl_adapter)
+        #     else:
+        #         # If the frequency starts increasing, break out of the loop
+        #         break
+        # else:
+        #     below_threshold = False  # Reset the below threshold condition if we are above 1 GHz
 
-            # Update last_beat_freq at the end of the loop
-            last_beat_freq = current_freq
+        # Update last_beat_freq at the end of the loop
+        last_beat_freq = current_freq
 
-            if wl_meter_beat_freq > 50:
-                print(f"Beat Frequency (Wavelength Meter): {wl_meter_beat_freq} GHz")
-                calibration_freq = wl_meter_beat_freq
+        if wl_meter_beat_freq > 50:
+            print(f"Beat Frequency (Wavelength Meter): {wl_meter_beat_freq} GHz")
+            calibration_freq = wl_meter_beat_freq
 
-                # Update the wavelength based on current frequency difference
-                if 100 < wl_meter_beat_freq <= 200:
-                    laser_4_new_freq = laser_4_freq - (50 * 1e9)
-                elif 200 < wl_meter_beat_freq <= 300:
-                    laser_4_new_freq = laser_4_freq - (150 * 1e9)
-                elif 300 < wl_meter_beat_freq <= 400:
-                    laser_4_new_freq = laser_4_freq - (250 * 1e9)
-                elif wl_meter_beat_freq > 400:
-                    laser_4_new_freq = laser_4_freq - (350 * 1e9)
-                else:
-                    laser_4_new_freq = laser_4_freq - (25 * 1e9)
+            # Update the wavelength based on current frequency difference
+            if 100 < wl_meter_beat_freq <= 200:
+                laser_4_new_freq = laser_4_freq - (50 * 1e9)
+            elif 200 < wl_meter_beat_freq <= 300:
+                laser_4_new_freq = laser_4_freq - (150 * 1e9)
+            elif 300 < wl_meter_beat_freq <= 400:
+                laser_4_new_freq = laser_4_freq - (250 * 1e9)
+            elif wl_meter_beat_freq > 400:
+                laser_4_new_freq = laser_4_freq - (350 * 1e9)
+            else:
+                laser_4_new_freq = laser_4_freq - (25 * 1e9)
 
-                laser_4_WL = (c / laser_4_new_freq) * 1e9  # Set the new wavelength
+            laser_4_WL = (c / laser_4_new_freq) * 1e9  # Set the new wavelength
 
-                # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
-                if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
-                    set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
-                else:
-                    print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                    exit_program(ecl_adapter)
+            # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
+            if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
+                set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+            else:
+                print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
+                exit_program(ecl_adapter)
 
-            elif esa_beat_freq < 50 and wl_meter_beat_freq < 50:
-                print(f"Beat Frequency (ESA): {round(esa_beat_freq,1)} GHz")
-                calibration_freq = esa_beat_freq
+        elif esa_beat_freq < 50 and wl_meter_beat_freq < 50:
+            print(f"Beat Frequency (ESA): {round(esa_beat_freq,1)} GHz")
+            calibration_freq = esa_beat_freq
 
-                if esa_beat_freq > 40:
-                    laser_4_new_freq = laser_4_freq - (30 * 1e9)
-                elif 30 < esa_beat_freq <= 40:
-                    laser_4_new_freq = laser_4_freq - (20 * 1e9)
-                elif 20 < esa_beat_freq <= 30:
-                    laser_4_new_freq = laser_4_freq - (10 * 1e9)
-                elif 10 < esa_beat_freq <= 20:
-                    laser_4_new_freq = laser_4_freq - (8 * 1e9)
-                elif 5 < esa_beat_freq <= 10:
-                    laser_4_new_freq = laser_4_freq - (3 * 1e9)
-                elif 1.5 < esa_beat_freq <= 5:
-                    laser_4_new_freq = laser_4_freq - (0.5 * 1e9)
-                elif 1 <= esa_beat_freq <= 1.5:
-                    laser_4_new_freq = laser_4_freq - (.2 * 1e9)
-                # elif esa_beat_freq < 1:  # the value is within the threshold so break out of the loop as to not update the wavelength again unnecessarily
-                #     break
-                else:
-                    # If under 1GHz beat frequency, update by .8 GHz to get to the other side of the 0 threshold, then break out of the loop
-                    laser_4_new_freq = laser_4_freq - (.8 * 1e9)
-                    laser_4_WL = (c / laser_4_new_freq) * 1e9
-                    # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
-                    if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
-                        set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
-                    else:
-                        print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                        exit_program(ecl_adapter)
-                    break
-
+            if esa_beat_freq > 40:
+                laser_4_new_freq = laser_4_freq - (30 * 1e9)
+            elif 30 < esa_beat_freq <= 40:
+                laser_4_new_freq = laser_4_freq - (20 * 1e9)
+            elif 20 < esa_beat_freq <= 30:
+                laser_4_new_freq = laser_4_freq - (10 * 1e9)
+            elif 10 < esa_beat_freq <= 20:
+                laser_4_new_freq = laser_4_freq - (8 * 1e9)
+            elif 5 < esa_beat_freq <= 10:
+                laser_4_new_freq = laser_4_freq - (3 * 1e9)
+            elif 1.5 < esa_beat_freq <= 5:
+                laser_4_new_freq = laser_4_freq - (0.5 * 1e9)
+            elif 1 <= esa_beat_freq <= 1.5:
+                laser_4_new_freq = laser_4_freq - (0.2 * 1e9)
+            # elif esa_beat_freq < 1:  # the value is within the threshold so break out of the loop as to not update the wavelength again unnecessarily
+            #     break
+            else:
+                # If under 1GHz beat frequency, update by .8 GHz to get to the other side of the 0 threshold, then break out of the loop
+                laser_4_new_freq = laser_4_freq - (.8 * 1e9)
                 laser_4_WL = (c / laser_4_new_freq) * 1e9
                 # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
                 if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
@@ -363,140 +370,154 @@ try:
                 else:
                     print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
                     exit_program(ecl_adapter)
-
-            time.sleep(1)
-
-        ############################################################################################################################################################
-        ####                                                   SECOND LOOP TO GET UP TO STARTING FREQUENCY IF NEEDED                                             ###
-        ############################################################################################################################################################
-
-        update_laser = True
-        last_freq = None
-
-        while abs(calibration_freq - start_freq) > freq_threshold:
-
-            if start_freq < 1: # If the starting frequency is 1 GHz or less, break out of the loop, already calibrated
                 break
 
-            #Measure beat frequency using wavelength meter and ESA
-            wl_meter_beat_freq = measure_wavelength_beat(wavelength_meter)
-            esa_beat_freq = measure_peak_frequency(spectrum_analyzer)
+            laser_4_WL = (c / laser_4_new_freq) * 1e9
+            # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
+            if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
+                set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+            else:
+                print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
+                exit_program(ecl_adapter)
 
-            # If wl_meter_beat_freq is None, it means the wavelength meter failed to measure, so we use the ESA value
-            if wl_meter_beat_freq is None:
-                wl_meter_beat_freq = esa_beat_freq
+        time.sleep(1)
 
-            if wl_meter_beat_freq is None or esa_beat_freq is None:
-                continue
+    ############################################################################################################################################################
+    ####                                                   SECOND LOOP TO GET UP TO STARTING FREQUENCY IF NEEDED                                             ###
+    ############################################################################################################################################################
 
-            current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
-            print(f"Current Beat Frequency: {round(current_freq,1)} GHz")
+    update_laser = True
+    last_freq = None
 
-            laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
-            laser_4_new_freq = laser_4_freq - ((abs(start_freq - current_freq) * 1e9))/2 # Update the frequency by half the difference between the current and starting frequency
-            laser_4_WL = (c / laser_4_new_freq) * 1e9 # Set the new wavelength
- 
+    while abs(calibration_freq - start_freq) > freq_threshold:
 
-            if(abs(current_freq - start_freq)) <= freq_threshold: # If the current frequency is within the threshold, don't update laser 4 again
-                update_laser = False
+        if start_freq < 1: # If the starting frequency is 1 GHz or less, break out of the loop, already calibrated
+            break
 
-            if(update_laser):
-                # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
-                if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
-                    set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
-                else:
-                    print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                    exit_program(ecl_adapter)
-                
-                calibration_freq = current_freq # Update calibration frequency to the current frequency
+        #Measure beat frequency using wavelength meter and ESA
+        wl_meter_beat_freq = measure_wavelength_beat(wavelength_meter)
+        esa_beat_freq = measure_peak_frequency(spectrum_analyzer)
 
-            time.sleep(1) # Small delay before next iteration
-            last_freq = current_freq # Update last frequency
-        
-        
-        laser_4_cal = round(laser_4_WL,3) # Store the calibrated wavelength for laser 4 to use in txt file header
-         # Catch the case where the beat frequency is under 1 GHz and the ESA is not working as it is too close to 0 GHz
+        # If wl_meter_beat_freq is None, it means the wavelength meter failed to measure, so we use the ESA value
+        if wl_meter_beat_freq is None:
+            wl_meter_beat_freq = esa_beat_freq
+
+        if wl_meter_beat_freq is None or esa_beat_freq is None:
+            continue
+
+        current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+        print(f"Current Beat Frequency: {round(current_freq,1)} GHz")
+
+        laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
+        laser_4_new_freq = laser_4_freq - ((abs(start_freq - current_freq) * 1e9))/2 # Update the frequency by half the difference between the current and starting frequency
+        laser_4_WL = (c / laser_4_new_freq) * 1e9 # Set the new wavelength
+
+
+        if(abs(current_freq - start_freq)) <= freq_threshold: # If the current frequency is within the threshold, don't update laser 4 again
+            update_laser = False
+
+        if(update_laser):
+            # Check if the new wavelength is within the bounds of the ECL laser and different from the current wavelength
+            if 1540 < laser_4_WL < 1660 and abs(laser_4_WL - initial_laser_4_WL) > 0.001:
+                set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
+            else:
+                print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
+                exit_program(ecl_adapter)
+            
+            calibration_freq = current_freq # Update calibration frequency to the current frequency
+
+        time.sleep(1) # Small delay before next iteration
+        last_freq = current_freq # Update last frequency
     
-        time.sleep(5)
-        ############################################################################################################################################################
-        ####                                             LOOP THROUGH STEPS, UPDATE WAVELENGTHS, TAKE MEASUREMENTS                                               ###
-        ############################################################################################################################################################
+    
+    laser_4_cal = round(laser_4_WL,3) # Store the calibrated wavelength for laser 4 to use in txt file header
+        # Catch the case where the beat frequency is under 1 GHz and the ESA is not working as it is too close to 0 GHz
 
-        print("CALIBRATION COMPLETE, STARTING FREQUENCY WITHIN THRESHOLD. BEGINNING STEPS...")
+    time.sleep(5)
+    ############################################################################################################################################################
+    ####                                             LOOP THROUGH STEPS, UPDATE WAVELENGTHS, TAKE MEASUREMENTS                                               ###
+    ############################################################################################################################################################
 
-        last_beat_freq = calibration_freq # Initialize last beat frequency to the current frequency
+    print("CALIBRATION COMPLETE, STARTING FREQUENCY WITHIN THRESHOLD. BEGINNING STEPS...")
 
-        plt.ion()  # Turn on interactive mode for live plotting
+    last_beat_freq = calibration_freq # Initialize last beat frequency to the current frequency
 
-        fig, axes = plt.subplots(2, 2, figsize=(10, 12))
-        #fig.delaxes(axes[0, 1])  # Remove the unnecessary subplot
-        fig.suptitle(f"Center Wavelength for Laser 3: {laser_3_WL:.2f} nm, Delay: {delay} s, Threshold: {freq_threshold} GHz", fontsize=16)
-        ax1, ax3, ax4, ax5 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
+    plt.ion()  # Turn on interactive mode for live plotting
 
-        ax2 = ax1.twinx()  # Create a twin y-axis for the first subplot
+    fig, axes = plt.subplots(2, 2, figsize=(10, 12))
+    #fig.delaxes(axes[0, 1])  # Remove the unnecessary subplot
+    fig.suptitle(f"Center Wavelength for Laser 3: {laser_3_WL:.2f} nm, Delay: {delay} s, Threshold: {freq_threshold} GHz", fontsize=16)
+    ax1, ax3, ax4, ax5 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
 
-        # Setup first subplot (ax1)
-        color = 'tab:blue'
-        ax1.set_xlabel('Step Number')
-        ax1.set_ylabel('Beat Frequency (GHz)', color=color)
-        ax1.set_title('Beat Frequency vs Step Number')
-        line1, = ax1.plot([], [], marker='o', linestyle='-', color=color)
-        ax1.tick_params(axis='y', labelcolor=color)
-        ax1.grid(True)
+    ax2 = ax1.twinx()  # Create a twin y-axis for the first subplot
 
-        color = 'tab:red'
-        ax2.set_ylabel('Laser 4 Wavelength (nm)', color=color)
-        line2, = ax2.plot([], [], marker='x', linestyle='--', color=color)
-        ax2.tick_params(axis='y', labelcolor=color)
+    # Setup first subplot (ax1)
+    color = 'tab:blue'
+    ax1.set_xlabel('Step Number')
+    ax1.set_ylabel('Beat Frequency (GHz)', color=color)
+    ax1.set_title('Beat Frequency vs Step Number')
+    line1, = ax1.plot([], [], marker='o', linestyle='-', color=color)
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.grid(True)
 
-        # Setup second subplot (ax3)
-        color = 'tab:blue'
-        ax3.set_xlabel('Beat Frequency (GHz)')
-        ax3.set_ylabel('Raw RF Power (dBm)', color=color)
-        ax3.set_title('Raw RF Power vs Beat Frequency')
-        line3, = ax3.plot([], [], marker='o', linestyle='-', color=color)
-        ax3.tick_params(axis='y', labelcolor=color)
-        ax3.grid(True)
+    color = 'tab:red'
+    ax2.set_ylabel('Laser 4 Wavelength (nm)', color=color)
+    line2, = ax2.plot([], [], marker='x', linestyle='--', color=color)
+    ax2.tick_params(axis='y', labelcolor=color)
 
-        # Setup third subplot (ax4)
-        color = 'tab:blue'
-        ax4.set_xlabel('Beat Frequency (GHz)')
-        ax4.set_ylabel('Photocurrent (A)', color=color)
-        ax4.set_title('Measured Photocurrent vs Beat Frequency')
-        line4, = ax4.plot([], [], marker='o', linestyle='-', color=color)
-        ax4.tick_params(axis='y', labelcolor=color)
-        ax4.grid(True)
+    # Setup second subplot (ax3)
+    color = 'tab:blue'
+    ax3.set_xlabel('Beat Frequency (GHz)')
+    ax3.set_ylabel('Raw RF Power (dBm)', color=color)
+    ax3.set_title('Raw RF Power vs Beat Frequency')
+    line3, = ax3.plot([], [], marker='o', linestyle='-', color=color)
+    ax3.tick_params(axis='y', labelcolor=color)
+    ax3.grid(True)
 
-        # Setup fourth subplot (ax5)
-        color = 'tab:blue'
-        ax5.set_xlabel('Beat Frequency (GHz)')
-        ax5.set_ylabel('Calibrated RF Power (dBm)', color=color)
-        ax5.set_title('Calibrated RF Power vs Beat Frequency')
-        line5, = ax5.plot([], [], marker='o', linestyle='-', color=color)
-        ax5.tick_params(axis='y', labelcolor=color)
-        ax5.grid(True)
+    # Setup third subplot (ax4)
+    color = 'tab:blue'
+    ax4.set_xlabel('Beat Frequency (GHz)')
+    ax4.set_ylabel('Photocurrent (A)', color=color)
+    ax4.set_title('Measured Photocurrent vs Beat Frequency')
+    line4, = ax4.plot([], [], marker='o', linestyle='-', color=color)
+    ax4.tick_params(axis='y', labelcolor=color)
+    ax4.grid(True)
 
-        
+    # Setup fourth subplot (ax5)
+    color = 'tab:blue'
+    ax5.set_xlabel('Beat Frequency (GHz)')
+    ax5.set_ylabel('Calibrated RF Power (dBm)', color=color)
+    ax5.set_title('Calibrated RF Power vs Beat Frequency')
+    line5, = ax5.plot([], [], marker='o', linestyle='-', color=color)
+    ax5.tick_params(axis='y', labelcolor=color)
+    ax5.grid(True)
 
-        fig.tight_layout()
-        # Add a centered title for the entire figure
-        
-        # Calculate step size
-        laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 wavelength
+    
 
-        # Get initial photocurrent for text output
-        # MEASURE CURRENT FROM KEITHLEY
-        response = keithley.query(":MEASure:CURRent?")
-        initial_current_values = response.split(',')
+    fig.tight_layout()
+    # Add a centered title for the entire figure
+    
+    # Calculate step size
+    laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 wavelength
 
-        if len(initial_current_values) > 1:
-            initial_current = float(initial_current_values[1])
-            initial_current = f"{initial_current:.2e}"  # Format for display
+    # Get initial photocurrent for text output
+    # MEASURE CURRENT FROM KEITHLEY
+    response = keithley.query(":MEASure:CURRent?")
+    initial_current_values = response.split(',')
 
-        # Set the Keithley back to local mode
-        keithley.write(":SYSTem:LOCal")
+    if len(initial_current_values) > 1:
+        initial_current = float(initial_current_values[1])
+        initial_current = f"{initial_current:.2e}"  # Format for display
 
+    # Set the Keithley back to local mode
+    keithley.write(":SYSTem:LOCal")
+
+    n = threading.Thread(target=exit_loop) # Start thread to be able to cancel the loop by keystroke
+    n.start()
+    try:
         for step in range(num_steps):
+            if not flag:
+                break
             beat_freq = measure_peak_frequency(spectrum_analyzer) if last_beat_freq < 45 else measure_wavelength_beat(wavelength_meter)
             if beat_freq is None:
                 continue
@@ -609,13 +630,160 @@ try:
             last_freq = beat_freq
 
             time.sleep(delay)  # Delay for the lasers to stabilize based on user input
+    finally:
+        # Signal the exit loop thread to stop
+        exit_event.set()
+        n.join()  # Wait for the thread to finish
+        print("Loop stopped.")
+    plt.ioff()  # Turn off interactive mode
+    # Sort the data by beat frequency
+    beat_freq_and_power.sort(key=lambda x: x[0])
+    beat_freqs_pow, powers, photo_currents, p_actuals = zip(*beat_freq_and_power)
 
-        plt.ioff()  # Turn off interactive mode
+    ############################################################################################################################################################
+    #                                   Calculate Calibrated RF from network analyzer file
+    ############################################################################################################################################################
 
-    except KeyboardInterrupt:
-        exit_program(ecl_adapter)
-        
 
+    # Read the header to detect the units
+    freq_unit, data_format = read_s2p_header(filepath)
+
+    print(freq_unit, data_format)
+
+    # Load the .s2p file
+    s2p_file = rf.Network(filepath)
+
+    # Gather s12 and s21 data
+    s12 = s2p_file.s_db[:,0,1]
+    s21 = s2p_file.s_db[:,1,0]
+    s_avg = (s12 + s21) / 2
+
+    frequencies = s2p_file.f
+
+    # If needed, convert frequency to GHz
+    if(freq_unit == 'khz'):
+        frequencies = frequencies / 1e6
+    elif(freq_unit == 'mhz'):
+        frequencies = frequencies / 1e3
+    elif(freq_unit == 'hz'):
+        frequencies = frequencies / 1e9
+
+    # If needed, convert s-parameters to dB
+    if(data_format == 'RI'):
+        s12 = 20 * np.log10(np.sqrt(np.real(s12)**2 + np.imag(s12)**2))
+        s21 = 20 * np.log10(np.sqrt(np.real(s21)**2 + np.imag(s21)**2))
+        s_avg = 20 * np.log10(np.sqrt(np.real(s_avg)**2 + np.imag(s_avg)**2))
+
+    elif(data_format == 'MA'):
+        s12 = 20 * np.log10(np.abs(s12))
+        s21 = 20 * np.log10(np.abs(s21))
+        s_avg = 20 * np.log10(np.abs(s_avg))
+    
+    elif(data_format == 'DB'): 
+        pass
+
+    # Interpolate the data
+    f = interp1d(frequencies, s_avg, kind='cubic')
+
+    # Gather excel data for RF probe loss
+    probe_loss_frequency, probe_loss = read_excel_data(excel_filepath)
+    interpolated_probe = interp1d(probe_loss_frequency, probe_loss, kind='cubic')
+
+    # Example beat frequencies (replace with your actual beat frequencies)
+    interpolated_loss = f(beat_freqs_pow)
+    interpolated_probe_loss = interpolated_probe(beat_freqs_pow)
+
+    # Make sure both np arrays
+    interpolated_loss = np.array(interpolated_loss)
+    interpolated_probe_loss = np.array(interpolated_probe_loss)
+    
+
+    # Now update the calibrated_rf calculation to include the new interpolated loss values
+    calibrated_rf = np.array(powers) + np.abs(interpolated_loss.real) + np.abs(interpolated_probe_loss)
+    calibrated_rf = np.round(calibrated_rf, 2)
+    
+    # Static plot at the end
+    line1.set_data(steps, beat_freqs)
+    line2.set_data(steps, laser_4_wavelengths)
+    line3.set_data(beat_freqs, [x[1] for x in beat_freq_and_power])
+    ax1.relim()
+    ax2.relim()
+    ax1.autoscale_view()
+    ax2.autoscale_view()
+
+
+    line3.set_data(beat_freqs_pow, powers)
+    ax3.relim()
+    ax3.autoscale_view()
+    line4.set_data(beat_freqs_pow, photo_currents)
+    ax4.relim()
+    ax4.autoscale_view()
+    line5.set_data(beat_freqs_pow, calibrated_rf)
+    ax5.relim()
+    ax5.autoscale_view()
+
+    # Manually set y-ticks for the RF power graphs with 3 units interval
+    rf_power_min = min(powers)
+    rf_power_max = max(powers)
+    rf_power_ticks = np.arange(np.floor(rf_power_min / 3) * 3, np.ceil(rf_power_max / 3) * 3 + 3, 3)  # Generate y-ticks with 3 units interval
+
+    ax3.set_yticks(rf_power_ticks)
+    ax5.set_yticks(rf_power_ticks)
+
+    # Manually set y-ticks for the calibrated RF power graph with 3 units interval
+    calibrated_rf_min = min(calibrated_rf)
+    calibrated_rf_max = max(calibrated_rf)
+    calibrated_rf_ticks = np.arange(np.floor(calibrated_rf_min / 3) * 3, np.ceil(calibrated_rf_max / 3) * 3 + 3, 3)  # Generate y-ticks with 3 units interval
+
+    ax5.set_yticks(calibrated_rf_ticks)
+
+
+    plt.draw()
+    plt.show()
+    ############################################################################################################################################################
+    ####                                              PROMPTED USER INPUTS FOR OUTPUTTING DATA IN .TXT FILE                                                  ###
+    ############################################################################################################################################################
+    
+    output_input = input("Would you like to output the data to a .txt file? (Yes/No): ").strip().upper()
+    while output_input not in ['YES', 'NO', 'Y', 'N']: # Loop until get a valid input
+        output_input = input("Invalid input. Would you like to output the data to a .txt file? (Yes (Y) / No (N)): ").strip().upper()
+    if output_input == 'Yes' or output_input == 'Y':
+        # Get user input for file name
+        filename_input= input("Enter your desired file name: ").strip().upper()
+        extension = '.txt'
+        counter = 1
+
+        txt_filename = f'{filename_input}{extension}'
+        while os.path.exists(txt_filename):
+            txt_filename = f'{filename_input}_{counter}{extension}'
+            counter += 1
+
+
+        device_num = int(input("Enter the device number: ")) # Get the device number from the user
+        comment = input("Enter any trial comments: ").strip().upper() # Get any comments from the user
+        keithley_voltage = keithley.query(":SOUR:VOLT:LEV:IMM:AMPL?").strip() # Get the keithley voltage from the keithley
+        keithley_voltage = f"{float(keithley_voltage):.3e}" # Format the keithley voltage for display
+        keithley.write(":SYSTem:LOCal") # Set the keithley back to local mode
+        #initial_current = input("Enter the initial photocurrent: ").strip().upper() # Get the initial photocurrent from the user
+
+
+        with open(txt_filename, 'w') as f:
+            f.write("DEVICE NUMBER: " + str(device_num) + "\n")
+            f.write("COMMENTS: " + comment + "\n")
+            f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
+            f.write("INITIAL PHOTOCURRENT: " + str(initial_current) + " (A)" + "\n")
+            f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " +str(laser_4_cal) + " (nm) :" + " DELAY: " + str(delay) + " (s) " + "\n")
+            f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
+            f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
+            f.write("\n")
+            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRaw RF POW (dBm)\tCal RF POW (dBm)\tP Actual (dBm)\n")
+            for i in range(len(steps)):
+                f.write(f"{beat_freqs_pow[i]:<10.2f}\t{float(photo_currents[i]):<10.4e}\t\t{powers[i]:<10.2f}\t\t{calibrated_rf[i]:<10.2f}\t\t{p_actuals[i]:<10.3f}\n")
+
+        print(f"Data saved to {txt_filename}")
+
+except KeyboardInterrupt:
+    print("Program interrupted by user. Exiting...")
     # Sort the data by beat frequency
     beat_freq_and_power.sort(key=lambda x: x[0])
     beat_freqs_pow, powers, photo_currents, p_actuals = zip(*beat_freq_and_power)
