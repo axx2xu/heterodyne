@@ -1,0 +1,279 @@
+import sys
+import time
+import pyvisa
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox, QCheckBox
+
+def disable_lasers_and_exit(ecl_adapter):
+    #print("Disabling lasers...")
+    #ecl_adapter.write("CH3:DISABLE") # Disable Lasers 3 and 4
+    #ecl_adapter.write("CH4:DISABLE")
+    ecl_adapter.close()
+    print("Connection closed.")
+    sys.exit(0)
+
+def peak_search(spectrum_analyzer):
+    spectrum_analyzer.write('MKPK HI')
+    time.sleep(1)
+    peak_freq = spectrum_analyzer.query('MKF?')
+    return float(peak_freq)
+
+def measure_wavelength_delta(wavelength_meter):
+    try:
+        wavelength_meter.write(":INIT:IMM")
+        time.sleep(1.5)
+        freq_data = wavelength_meter.query(":CALC3:DATA? FREQuency").strip().split(',')
+        freqs = [float(freq) for freq in freq_data]
+        if len(freqs) == 2:
+            return abs(freqs[0] - freqs[1]) / 1e9
+    except Exception as e:
+        print("Error measuring delta frequency with wavelength meter:", e)
+        return None
+
+def measure_peak_frequency(spectrum_analyzer):
+    try:
+        return peak_search(spectrum_analyzer) / 1e9
+    except Exception as e:
+        print("Error measuring peak frequency with spectrum analyzer:", e)
+        return None
+
+def set_laser_wavelength(ecl_adapter, channel, wavelength):
+    print(f"Setting laser {channel} wavelength to {wavelength:.3f} nm...")
+    ecl_adapter.write(f"CH{channel}:L={wavelength:.3f}")
+
+def set_laser_power(ecl_adapter, channel, power):
+    print(f"Setting laser {channel} output power to {power:.2f} dBm...")
+    ecl_adapter.write(f"CH{channel}:P={power:.2f}")
+
+class LaserApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+        self.rm = pyvisa.ResourceManager()
+        self.steps = []
+        self.delta_freqs = []
+        self.laser_4_wavelengths = []
+
+    def initUI(self):
+        layout = QVBoxLayout()
+
+        self.laser3WLLabel = QLabel('Starting WL for Laser 3 (nm):')
+        self.laser3WLInput = QLineEdit()
+        layout.addWidget(self.laser3WLLabel)
+        layout.addWidget(self.laser3WLInput)
+
+        self.laser4WLLabel = QLabel('Starting WL for Laser 4 (nm) (recommended 1 nm below Laser 3):')
+        self.laser4WLInput = QLineEdit()
+        layout.addWidget(self.laser4WLLabel)
+        layout.addWidget(self.laser4WLInput)
+
+        self.freqStepLabel = QLabel('Frequency Step Size for Laser 4 (GHz):')
+        self.freqStepInput = QLineEdit()
+        layout.addWidget(self.freqStepLabel)
+        layout.addWidget(self.freqStepInput)
+
+        self.finalFreqLabel = QLabel('Final Frequency (GHz):')
+        self.finalFreqInput = QLineEdit()
+        layout.addWidget(self.finalFreqLabel)
+        layout.addWidget(self.finalFreqInput)
+
+        self.thresholdLabel = QLabel('Starting Frequency Threshold (GHz):')
+        self.thresholdInput = QLineEdit()
+        layout.addWidget(self.thresholdLabel)
+        layout.addWidget(self.thresholdInput)
+
+        self.defaultThresholdCheckbox = QCheckBox('Use default threshold of 1 GHz')
+        self.defaultThresholdCheckbox.setChecked(True)
+        self.defaultThresholdCheckbox.stateChanged.connect(self.toggleThresholdInput)
+        layout.addWidget(self.defaultThresholdCheckbox)
+
+        self.runButton = QPushButton('Run')
+        self.runButton.clicked.connect(self.run)
+        layout.addWidget(self.runButton)
+
+        self.setLayout(layout)
+        self.setWindowTitle('Laser Control Interface')
+
+    def toggleThresholdInput(self):
+        if self.defaultThresholdCheckbox.isChecked():
+            self.thresholdInput.setEnabled(False)
+        else:
+            self.thresholdInput.setEnabled(True)
+
+    def update_plot(self, frame):
+        self.ax1.clear()
+        self.ax2.clear()
+        
+        color = 'tab:blue'
+        self.ax1.set_xlabel('Step Number')
+        self.ax1.set_ylabel('Delta Frequency (GHz)', color=color)
+        self.ax1.plot(self.steps, self.delta_freqs, marker='o', linestyle='-', color=color)
+        self.ax1.tick_params(axis='y', labelcolor=color)
+        self.ax1.grid(True)
+
+        color = 'tab:red'
+        self.ax2.set_ylabel('Laser 4 Wavelength (nm)', color=color)
+        self.ax2.plot(self.steps, self.laser_4_wavelengths, marker='x', linestyle='--', color=color)
+        self.ax2.tick_params(axis='y', labelcolor=color)
+
+        self.fig.tight_layout()
+        self.fig.suptitle(f"Delta Frequency and Laser 4 Wavelength vs Step Number (Starting Wavelength for Laser 3: {self.laser_3_WL:.2f} nm)")
+
+    def run(self):
+        try:
+            self.laser_3_WL = float(self.laser3WLInput.text())
+            self.laser_4_WL = float(self.laser4WLInput.text())
+            self.laser_4_step = float(self.freqStepInput.text())
+            self.final_freq = float(self.finalFreqInput.text())
+            if self.defaultThresholdCheckbox.isChecked():
+                self.freq_threshold = 1.0
+            else:
+                self.freq_threshold = float(self.thresholdInput.text())
+        except ValueError:
+            QMessageBox.critical(self, 'Error', 'Invalid input. Please enter valid numbers.')
+            return
+
+        try:
+            ecl_adapter = self.rm.open_resource('GPIB0::10::INSTR')
+            wavelength_meter = self.rm.open_resource('GPIB0::20::INSTR')
+            spectrum_analyzer = self.rm.open_resource('GPIB0::18::INSTR')
+
+            ecl_adapter.timeout = 10000
+            wavelength_meter.timeout = 10000
+            spectrum_analyzer.timeout = 10000
+
+            #ecl_adapter.clear()
+            #wavelength_meter.clear()
+            #spectrum_analyzer.clear()
+
+            #wavelength_meter.write('*CLS')
+            #spectrum_analyzer.write('*CLS')
+
+            set_laser_wavelength(ecl_adapter, 3, self.laser_3_WL)
+            set_laser_wavelength(ecl_adapter, 4, self.laser_4_WL)
+            set_laser_power(ecl_adapter, 3, 1.00)
+            set_laser_power(ecl_adapter, 4, 1.00)
+
+            #ecl_adapter.write("CH3:ENABLE")
+            #ecl_adapter.write("CH4:ENABLE")
+            time.sleep(10) # Give some time for lasers to stabilize
+
+            c = 299792458
+            num_steps = int(self.final_freq / self.laser_4_step)
+
+            wavelength_meter.write(":CALC3:DELTA:WAV:STAT ON")
+            time.sleep(1)
+
+            last_delta_freq = 0
+            laser_3_freq = c / (self.laser_3_WL * 1e-9)
+            wavelength_meter.write(f":CALC3:DELTA:REF:FREQ {laser_3_freq}")
+            time.sleep(1)
+
+            calibration_freq = self.freq_threshold # Start with threshold value
+            while calibration_freq >= self.freq_threshold:
+                laser_4_freq = c / (self.laser_4_WL * 1e-9)
+                wl_meter_delta_freq = measure_wavelength_delta(wavelength_meter)
+                esa_delta_freq_1 = measure_peak_frequency(spectrum_analyzer)
+                time.sleep(0.5)
+                esa_delta_freq_2 = measure_peak_frequency(spectrum_analyzer)
+                esa_delta_freq = (esa_delta_freq_1 + esa_delta_freq_2) / 2 # Average 2 esa measurements
+
+
+                if wl_meter_delta_freq is None:
+                    wl_meter_delta_freq = esa_delta_freq
+                if wl_meter_delta_freq is None or esa_delta_freq is None:
+                    continue
+
+                if wl_meter_delta_freq > 50:
+                    calibration_freq = wl_meter_delta_freq
+                    if wl_meter_delta_freq > 100:
+                        laser_4_new_freq = laser_4_freq - (50 * 1e9)
+                    elif 200 < wl_meter_delta_freq < 300:
+                        laser_4_new_freq = laser_4_freq - (150 * 1e9)
+                    elif 300 < wl_meter_delta_freq < 400:
+                        laser_4_new_freq = laser_4_freq - (250 * 1e9)
+                    elif wl_meter_delta_freq > 400:
+                        laser_4_new_freq = laser_4_freq - (350 * 1e9)
+                    else:
+                        laser_4_new_freq = laser_4_freq - (25 * 1e9)
+                    self.laser_4_WL = (c / laser_4_new_freq) * 1e9
+                    if 1540 < self.laser_4_WL < 1660:
+                        set_laser_wavelength(ecl_adapter, 4, self.laser_4_WL)
+                        print(f"Calibration frequency WLM: {calibration_freq:.3f} GHz")
+                    else:
+                        QMessageBox.critical(self, 'Error', f"New wavelength for laser 4 is out of bounds: {self.laser_4_WL:.3f} nm")
+                        disable_lasers_and_exit(ecl_adapter)
+                elif esa_delta_freq < 50 and wl_meter_delta_freq < 50:
+                    calibration_freq = esa_delta_freq
+                    if esa_delta_freq > 40:
+                        laser_4_new_freq = laser_4_freq - (20 * 1e9)
+                    elif 30 < esa_delta_freq < 40:
+                        laser_4_new_freq = laser_4_freq - (10 * 1e9)
+                    elif 20 < esa_delta_freq < 30:
+                        laser_4_new_freq = laser_4_freq - (5 * 1e9)
+                    elif 10 < esa_delta_freq < 20:
+                        laser_4_new_freq = laser_4_freq - (3.5 * 1e9)
+                    elif 5 < esa_delta_freq < 10:
+                        laser_4_new_freq = laser_4_freq - (1.5 * 1e9)
+                    elif 1.5 < esa_delta_freq < 5:
+                        laser_4_new_freq = laser_4_freq - (0.8 * 1e9)
+                    elif 1 < esa_delta_freq < 1.5:
+                        laser_4_new_freq = laser_4_freq - (.1 * 1e9)
+                    else:
+                        break
+                    self.laser_4_WL = (c / laser_4_new_freq) * 1e9
+                    print(f"Calibration frequency ESA: {calibration_freq:.3f} GHz")
+                    set_laser_wavelength(ecl_adapter, 4, self.laser_4_WL)
+                time.sleep(1)
+            time.sleep(5)
+
+            self.steps = []
+            self.delta_freqs = []
+            self.laser_4_wavelengths = []
+
+            self.fig, self.ax1 = plt.subplots(figsize=(10, 6))
+            self.ax2 = self.ax1.twinx()
+            ani = FuncAnimation(self.fig, self.update_plot, interval=1000)
+            plt.show(block=False)
+
+            for step in range(num_steps):
+                if last_delta_freq < 45:
+                    esa_delta_freq_1 = measure_peak_frequency(spectrum_analyzer)
+                    time.sleep(0.5)
+                    esa_delta_freq_2 = measure_peak_frequency(spectrum_analyzer)
+                    delta_freq = (esa_delta_freq_1 + esa_delta_freq_2) / 2 # Average 2 esa measurements
+                    if delta_freq is None:
+                        continue
+                else:
+                    delta_freq = measure_wavelength_delta(wavelength_meter)
+                    if delta_freq is None:
+                        continue
+                last_delta_freq = delta_freq
+                self.steps.append(step + 1)
+                self.delta_freqs.append(delta_freq)
+                self.laser_4_wavelengths.append(self.laser_4_WL)
+                laser_4_freq = c / (self.laser_4_WL * 1e-9)
+                laser_4_new_freq = laser_4_freq - (self.laser_4_step * 1e9)
+                self.laser_4_WL = (c / laser_4_new_freq) * 1e9
+                set_laser_wavelength(ecl_adapter, 4, self.laser_4_WL)
+                print(f"Step {step + 1}: Delta Frequency: {delta_freq:.3f} GHz, Laser 4 Wavelength: {self.laser_4_WL:.3f} nm")
+                if delta_freq < 45:
+                    time.sleep(5)
+                elif delta_freq >= 45:
+                    time.sleep(5)
+            time.sleep(5)
+            #ecl_adapter.write("CH3:DISABLE") # Disable Lasers 3 and 4
+            #ecl_adapter.write("CH4:DISABLE")
+            ecl_adapter.close()
+
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', str(e))
+            if 'ecl_adapter' in locals():
+                disable_lasers_and_exit(ecl_adapter)
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    ex = LaserApp()
+    ex.show()
+    sys.exit(app.exec_())

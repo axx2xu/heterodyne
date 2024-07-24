@@ -1,0 +1,27 @@
+import pyvisa
+
+# Initialize the VISA resource manager
+rm = pyvisa.ResourceManager()
+
+# Open the connection to the Keysight 8157xA (update with your actual GPIB address)
+attenuator = rm.open_resource('GPIB0::26::INSTR')  # Replace '20' with the actual GPIB address of your device
+
+# Set timeout to 5 seconds (5000 milliseconds)
+attenuator.timeout = 5000
+
+def read_actual_power():
+    # Read the actual power value
+    p_actual = attenuator.query('READ:POW?')
+    return float(p_actual)
+
+def main():
+    try:
+        # Read and print the actual power
+        p_actual = read_actual_power()
+        print(f'Actual Power: {p_actual} dBm')
+    finally:
+        # Ensure the resource is closed
+        attenuator.close()
+
+if __name__ == '__main__':
+    main()
