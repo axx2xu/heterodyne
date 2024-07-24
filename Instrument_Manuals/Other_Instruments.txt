@@ -1,0 +1,4 @@
+Keithley: - existing library created using pymeasure (pip install pymeasure)
+https://github.com/pymeasure/pymeasure/blob/master/pymeasure/instruments/keithley/keithley2400.py
+
+Anritsu Osics ECL - used hardcopy manual Professor Beling provided in the lab

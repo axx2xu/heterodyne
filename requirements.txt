@@ -1,0 +1,9 @@
+pip install pymeasure pyvisa matplotlib scikit-rf numpy pandas openpyxl scipy   (enter this command into python terminal)
+
+NRP Toolkit- https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/software/3721_3104_00/NrpToolkit-4.23.8851.17818.exe
+
+VISA Library Passport for NRP
+
+NI Max - https://knowledge.ni.com/KnowledgeArticleDetails?id=kA03q000000YGQwCAO&l=en-US
+
+R&S Power Viewer (Not necessary but can be useful to visually read power output continuously) - https://www.rohde-schwarz.com/software/nrp-z2x1/
