@@ -100,3 +100,5 @@ Conclusion:
 
 ## Contact
 For any questions or further information, please contact Thomas Keyes at axx2xu@virginia.edu.
+
+All this information can also be found in the file named "Python Heterodyne Automation Slides.pdf", along with sample images from the program
