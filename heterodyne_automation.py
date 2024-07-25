@@ -52,12 +52,14 @@ voa = rm.open_resource('GPIB0::26::INSTR')  # Update with your actual GPIB addre
 ############################################################################################################################################################
 
 # Disconnects from instruments and exits the program using (Ctrl + C)
-def exit_program(ecl_adapter):
+def exit_program():
     """Exit program and close the connection."""
     ecl_adapter.close()
     wavelength_meter.close()
     spectrum_analyzer.close()
     keithley.close()
+    voa.close()
+    RS_power_sensor.close()
     print("Connection closed.")
     sys.exit(0)
 
@@ -333,7 +335,7 @@ try:
                 set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
             else:
                 print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                exit_program(ecl_adapter)
+                exit_program()
 
         elif esa_beat_freq < 50 and wl_meter_beat_freq < 50:
             print(f"Beat Frequency (ESA): {round(esa_beat_freq,1)} GHz")
@@ -366,7 +368,7 @@ try:
                     set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
                 else:
                     print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                    exit_program(ecl_adapter)
+                    exit_program()
                 break
 
             laser_4_WL = (c / laser_4_new_freq) * 1e9
@@ -375,7 +377,7 @@ try:
                 set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
             else:
                 print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                exit_program(ecl_adapter)
+                exit_program()
 
         time.sleep(1)
 
@@ -419,7 +421,7 @@ try:
                 set_laser_wavelength(ecl_adapter, 4, laser_4_WL)
             else:
                 print(f"New wavelength for laser 4 is out of bounds or unchanged: {laser_4_WL:.3f} nm")
-                exit_program(ecl_adapter)
+                exit_program()
             
             calibration_freq = current_freq # Update calibration frequency to the current frequency
 
@@ -793,7 +795,7 @@ try:
 
 except KeyboardInterrupt:
     print("Program interrupted by user. Exiting...")
-    exit_program(ecl_adapter)
+    exit_program()
     
 finally:
     # Ensure all resources are closed
