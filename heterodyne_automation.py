@@ -639,153 +639,6 @@ try:
     ############################################################################################################################################################
 
 
-    # Read the header to detect the units
-    freq_unit, data_format = read_s2p_header(filepath)
-
-    print(freq_unit, data_format)
-
-    # Load the .s2p file
-    s2p_file = rf.Network(filepath)
-
-    # Gather s12 and s21 data
-    s12 = s2p_file.s_db[:,0,1]
-    s21 = s2p_file.s_db[:,1,0]
-    s_avg = (s12 + s21) / 2
-
-    frequencies = s2p_file.f
-
-    # If needed, convert frequency to GHz
-    if(freq_unit == 'khz'):
-        frequencies = frequencies / 1e6
-    elif(freq_unit == 'mhz'):
-        frequencies = frequencies / 1e3
-    elif(freq_unit == 'hz'):
-        frequencies = frequencies / 1e9
-
-    # If needed, convert s-parameters to dB
-    if(data_format == 'RI'):
-        s12 = 20 * np.log10(np.sqrt(np.real(s12)**2 + np.imag(s12)**2))
-        s21 = 20 * np.log10(np.sqrt(np.real(s21)**2 + np.imag(s21)**2))
-        s_avg = 20 * np.log10(np.sqrt(np.real(s_avg)**2 + np.imag(s_avg)**2))
-
-    elif(data_format == 'MA'):
-        s12 = 20 * np.log10(np.abs(s12))
-        s21 = 20 * np.log10(np.abs(s21))
-        s_avg = 20 * np.log10(np.abs(s_avg))
-    
-    elif(data_format == 'DB'): 
-        pass
-
-    # Interpolate the data
-    f = interp1d(frequencies, s_avg, kind='cubic')
-
-    # Gather excel data for RF probe loss
-    probe_loss_frequency, probe_loss = read_excel_data(excel_filepath)
-    interpolated_probe = interp1d(probe_loss_frequency, probe_loss, kind='cubic')
-
-    # Example beat frequencies (replace with your actual beat frequencies)
-    interpolated_loss = f(beat_freqs_pow)
-    interpolated_probe_loss = interpolated_probe(beat_freqs_pow)
-
-    # Make sure both np arrays
-    interpolated_loss = np.array(interpolated_loss)
-    interpolated_probe_loss = np.array(interpolated_probe_loss)
-    
-
-    # Now update the calibrated_rf calculation to include the new interpolated loss values
-    calibrated_rf = np.array(powers) + np.abs(interpolated_loss.real) + np.abs(interpolated_probe_loss)
-    calibrated_rf = np.round(calibrated_rf, 2)
-    
-    # Static plot at the end
-    line1.set_data(steps, beat_freqs)
-    line2.set_data(steps, laser_4_wavelengths)
-    line3.set_data(beat_freqs, [x[1] for x in beat_freq_and_power])
-    ax1.relim()
-    ax2.relim()
-    ax1.autoscale_view()
-    ax2.autoscale_view()
-
-
-    line3.set_data(beat_freqs_pow, powers)
-    ax3.relim()
-    ax3.autoscale_view()
-    line4.set_data(beat_freqs_pow, photo_currents)
-    ax4.relim()
-    ax4.autoscale_view()
-    line5.set_data(beat_freqs_pow, calibrated_rf)
-    ax5.relim()
-    ax5.autoscale_view()
-
-    # Manually set y-ticks for the RF power graphs with 3 units interval
-    rf_power_min = min(powers)
-    rf_power_max = max(powers)
-    rf_power_ticks = np.arange(np.floor(rf_power_min / 3) * 3, np.ceil(rf_power_max / 3) * 3 + 3, 3)  # Generate y-ticks with 3 units interval
-
-    ax3.set_yticks(rf_power_ticks)
-    ax5.set_yticks(rf_power_ticks)
-
-    # Manually set y-ticks for the calibrated RF power graph with 3 units interval
-    calibrated_rf_min = min(calibrated_rf)
-    calibrated_rf_max = max(calibrated_rf)
-    calibrated_rf_ticks = np.arange(np.floor(calibrated_rf_min / 3) * 3, np.ceil(calibrated_rf_max / 3) * 3 + 3, 3)  # Generate y-ticks with 3 units interval
-
-    ax5.set_yticks(calibrated_rf_ticks)
-
-
-    plt.draw()
-    plt.show()
-    ############################################################################################################################################################
-    ####                                              PROMPTED USER INPUTS FOR OUTPUTTING DATA IN .TXT FILE                                                  ###
-    ############################################################################################################################################################
-    
-    output_input = input("Would you like to output the data to a .txt file? (Yes/No): ").strip().upper()
-    while output_input not in ['YES', 'NO', 'Y', 'N']: # Loop until get a valid input
-        output_input = input("Invalid input. Would you like to output the data to a .txt file? (Yes (Y) / No (N)): ").strip().upper()
-    if output_input == 'Yes' or output_input == 'Y':
-        # Get user input for file name
-        filename_input= input("Enter your desired file name: ").strip().upper()
-        extension = '.txt'
-        counter = 1
-
-        txt_filename = f'{filename_input}{extension}'
-        while os.path.exists(txt_filename):
-            txt_filename = f'{filename_input}_{counter}{extension}'
-            counter += 1
-
-
-        device_num = int(input("Enter the device number: ")) # Get the device number from the user
-        comment = input("Enter any trial comments: ").strip().upper() # Get any comments from the user
-        keithley_voltage = keithley.query(":SOUR:VOLT:LEV:IMM:AMPL?").strip() # Get the keithley voltage from the keithley
-        keithley_voltage = f"{float(keithley_voltage):.3e}" # Format the keithley voltage for display
-        keithley.write(":SYSTem:LOCal") # Set the keithley back to local mode
-        #initial_current = input("Enter the initial photocurrent: ").strip().upper() # Get the initial photocurrent from the user
-
-
-        with open(txt_filename, 'w') as f:
-            f.write("DEVICE NUMBER: " + str(device_num) + "\n")
-            f.write("COMMENTS: " + comment + "\n")
-            f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
-            f.write("INITIAL PHOTOCURRENT: " + str(initial_current) + " (A)" + "\n")
-            f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " +str(laser_4_cal) + " (nm) :" + " DELAY: " + str(delay) + " (s) " + "\n")
-            f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
-            f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
-            f.write("\n")
-            f.write("F_BEAT(GHz)\tPHOTOCURRENT (A)\tRaw RF POW (dBm)\tCal RF POW (dBm)\tP Actual (dBm)\n")
-            for i in range(len(steps)):
-                f.write(f"{beat_freqs_pow[i]:<10.2f}\t{float(photo_currents[i]):<10.4e}\t\t{powers[i]:<10.2f}\t\t{calibrated_rf[i]:<10.2f}\t\t{p_actuals[i]:<10.3f}\n")
-
-        print(f"Data saved to {txt_filename}")
-
-except KeyboardInterrupt:
-    print("Program interrupted by user. Exiting...")
-    # Sort the data by beat frequency
-    beat_freq_and_power.sort(key=lambda x: x[0])
-    beat_freqs_pow, powers, photo_currents, p_actuals = zip(*beat_freq_and_power)
-
-    ############################################################################################################################################################
-    #                                   Calculate Calibrated RF from network analyzer file
-    ############################################################################################################################################################
-
     try:
         # Read the header to detect the units
         freq_unit, data_format = read_s2p_header(filepath)
@@ -937,6 +790,9 @@ except KeyboardInterrupt:
 
         print(f"Data saved to {txt_filename}")
 
+except KeyboardInterrupt:
+    print("Program interrupted by user. Exiting...")
+    exit_program(ecl_adapter)
     
 finally:
     # Ensure all resources are closed
