@@ -158,9 +158,7 @@ wavelength_meter.timeout = 5000
 spectrum_analyzer.timeout = 5000
 keithley.timeout = 5000
 voa.timeout = 5000
-RS_power_sensor.timeout(5000)
-
-RS_power_sensor.write('CAL:ZERO:AUTO ONCE') # Perform a zero calibration on the power sensor at the start of the program
+RS_power_sensor.timeout = 5000
 
 try:
     # Set the Keithley to local mode
@@ -275,7 +273,7 @@ try:
             if consecutive_increases >= max_consecutive_increases:
                 print("Calibration overshot the threshold, restarting calibration...")
                 # Reset calibration variables
-                laser_4_WL = initial_laser_4_WL  # Reset to initial wavelength
+                laser_4_WL = initial_laser_4_WL - 1 # Reset to initial wavelength - 1 nm
                 set_laser_wavelength(ecl_adapter, 4, initial_laser_4_WL)  # Apply the reset wavelength to Laser 4
                 consecutive_increases = 0
                 calibration_freq = freq_threshold  # Restart calibration
@@ -311,21 +309,22 @@ try:
         # Update last_beat_freq at the end of the loop
         last_beat_freq = current_freq
 
-        if wl_meter_beat_freq > 50:
+        if wl_meter_beat_freq >= 50:
             print(f"Beat Frequency (Wavelength Meter): {wl_meter_beat_freq} GHz")
             calibration_freq = wl_meter_beat_freq
 
             # Update the wavelength based on current frequency difference
-            if 100 < wl_meter_beat_freq <= 200:
-                laser_4_new_freq = laser_4_freq - (50 * 1e9)
-            elif 200 < wl_meter_beat_freq <= 300:
-                laser_4_new_freq = laser_4_freq - (150 * 1e9)
-            elif 300 < wl_meter_beat_freq <= 400:
-                laser_4_new_freq = laser_4_freq - (250 * 1e9)
-            elif wl_meter_beat_freq > 400:
-                laser_4_new_freq = laser_4_freq - (350 * 1e9)
-            else:
-                laser_4_new_freq = laser_4_freq - (25 * 1e9)
+            # if 100 < wl_meter_beat_freq <= 200:
+            #     laser_4_new_freq = laser_4_freq - (50 * 1e9)
+            # elif 200 < wl_meter_beat_freq <= 300:
+            #     laser_4_new_freq = laser_4_freq - (150 * 1e9)
+            # elif 300 < wl_meter_beat_freq <= 400:
+            #     laser_4_new_freq = laser_4_freq - (250 * 1e9)
+            # elif wl_meter_beat_freq > 400:
+            #     laser_4_new_freq = laser_4_freq - (350 * 1e9)
+            # else:
+            #     laser_4_new_freq = laser_4_freq - (25 * 1e9)
+            laser_4_new_freq = laser_4_freq - (wl_meter_beat_freq * 0.67 * 1e9) # Update the frequency by 2/3 of the beat frequency
 
             laser_4_WL = (c / laser_4_new_freq) * 1e9  # Set the new wavelength
 
@@ -340,17 +339,19 @@ try:
             print(f"Beat Frequency (ESA): {round(esa_beat_freq,1)} GHz")
             calibration_freq = esa_beat_freq
 
-            if esa_beat_freq > 40:
-                laser_4_new_freq = laser_4_freq - (30 * 1e9)
-            elif 30 < esa_beat_freq <= 40:
-                laser_4_new_freq = laser_4_freq - (20 * 1e9)
-            elif 20 < esa_beat_freq <= 30:
-                laser_4_new_freq = laser_4_freq - (10 * 1e9)
-            elif 10 < esa_beat_freq <= 20:
-                laser_4_new_freq = laser_4_freq - (8 * 1e9)
-            elif 5 < esa_beat_freq <= 10:
-                laser_4_new_freq = laser_4_freq - (3 * 1e9)
-            elif 1.5 < esa_beat_freq <= 5:
+            # if esa_beat_freq > 40:
+            #     laser_4_new_freq = laser_4_freq - (30 * 1e9)
+            # elif 30 < esa_beat_freq <= 40:
+            #     laser_4_new_freq = laser_4_freq - (20 * 1e9)
+            # elif 20 < esa_beat_freq <= 30:
+            #     laser_4_new_freq = laser_4_freq - (10 * 1e9)
+            # elif 10 < esa_beat_freq <= 20:
+            #     laser_4_new_freq = laser_4_freq - (8 * 1e9)
+            # elif 5 < esa_beat_freq <= 10:
+            #     laser_4_new_freq = laser_4_freq - (3 * 1e9)
+            if esa_beat_freq > 3:
+                laser_4_new_freq = laser_4_freq - (esa_beat_freq * 0.67 * 1e9) # Update the frequency by 2/3 of the beat frequency for all beat freq greater than 3 GHz
+            elif 1.5 < esa_beat_freq <= 3:
                 laser_4_new_freq = laser_4_freq - (0.5 * 1e9)
             elif 1 <= esa_beat_freq <= 1.5:
                 laser_4_new_freq = laser_4_freq - (0.2 * 1e9)
@@ -576,7 +577,7 @@ try:
                         time.sleep(0.1) # Wait for the measurement to complete
                     
                     output = sum(rf_outputs) / len(rf_outputs)  # Calculate the average of the 5 measurements
-                    output_dbm = math.log10(float(output)) * 10 + 30  # convert from watts to dBm
+                    output_dbm = math.log10(output) * 10 + 30  # convert from watts to dBm
                     
                     output_dbm = round(output_dbm, 2)  # round to 2 decimal places
                     beat_freq = round(beat_freq, 1)  # Round beat frequency to 1 decimal place
@@ -767,7 +768,7 @@ try:
             counter += 1
 
 
-        device_num = int(input("Enter the device number: ")) # Get the device number from the user
+        device_num = input("Enter the device number: ") # Get the device number from the user
         comment = input("Enter any trial comments: ").strip().upper() # Get any comments from the user
         keithley_voltage = keithley.query(":SOUR:VOLT:LEV:IMM:AMPL?").strip() # Get the keithley voltage from the keithley
         keithley_voltage = f"{float(keithley_voltage):.3e}" # Format the keithley voltage for display
