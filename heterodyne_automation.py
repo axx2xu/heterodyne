@@ -786,63 +786,76 @@ except KeyboardInterrupt:
     #                                   Calculate Calibrated RF from network analyzer file
     ############################################################################################################################################################
 
+    try:
+        # Read the header to detect the units
+        freq_unit, data_format = read_s2p_header(filepath)
 
-    # Read the header to detect the units
-    freq_unit, data_format = read_s2p_header(filepath)
+        print(freq_unit, data_format)
 
-    print(freq_unit, data_format)
+        # Load the .s2p file
+        s2p_file = rf.Network(filepath)
 
-    # Load the .s2p file
-    s2p_file = rf.Network(filepath)
+        # Gather s12 and s21 data
+        s12 = s2p_file.s_db[:,0,1]
+        s21 = s2p_file.s_db[:,1,0]
+        s_avg = (s12 + s21) / 2
 
-    # Gather s12 and s21 data
-    s12 = s2p_file.s_db[:,0,1]
-    s21 = s2p_file.s_db[:,1,0]
-    s_avg = (s12 + s21) / 2
+        frequencies = s2p_file.f
 
-    frequencies = s2p_file.f
+        # If needed, convert frequency to GHz
+        if(freq_unit == 'khz'):
+            frequencies = frequencies / 1e6
+        elif(freq_unit == 'mhz'):
+            frequencies = frequencies / 1e3
+        elif(freq_unit == 'hz'):
+            frequencies = frequencies / 1e9
 
-    # If needed, convert frequency to GHz
-    if(freq_unit == 'khz'):
-        frequencies = frequencies / 1e6
-    elif(freq_unit == 'mhz'):
-        frequencies = frequencies / 1e3
-    elif(freq_unit == 'hz'):
-        frequencies = frequencies / 1e9
+        # If needed, convert s-parameters to dB
+        if(data_format == 'RI'):
+            s12 = 20 * np.log10(np.sqrt(np.real(s12)**2 + np.imag(s12)**2))
+            s21 = 20 * np.log10(np.sqrt(np.real(s21)**2 + np.imag(s21)**2))
+            s_avg = 20 * np.log10(np.sqrt(np.real(s_avg)**2 + np.imag(s_avg)**2))
 
-    # If needed, convert s-parameters to dB
-    if(data_format == 'RI'):
-        s12 = 20 * np.log10(np.sqrt(np.real(s12)**2 + np.imag(s12)**2))
-        s21 = 20 * np.log10(np.sqrt(np.real(s21)**2 + np.imag(s21)**2))
-        s_avg = 20 * np.log10(np.sqrt(np.real(s_avg)**2 + np.imag(s_avg)**2))
+        elif(data_format == 'MA'):
+            s12 = 20 * np.log10(np.abs(s12))
+            s21 = 20 * np.log10(np.abs(s21))
+            s_avg = 20 * np.log10(np.abs(s_avg))
+        
+        elif(data_format == 'DB'): 
+            pass
 
-    elif(data_format == 'MA'):
-        s12 = 20 * np.log10(np.abs(s12))
-        s21 = 20 * np.log10(np.abs(s21))
-        s_avg = 20 * np.log10(np.abs(s_avg))
-    
-    elif(data_format == 'DB'): 
-        pass
+        # Interpolate the data
+        f = interp1d(frequencies, s_avg, kind='cubic')
+        interpolated_loss = f(beat_freqs_pow)
 
-    # Interpolate the data
-    f = interp1d(frequencies, s_avg, kind='cubic')
+        # Make into np array
+        interpolated_loss = np.array(interpolated_loss)
 
-    # Gather excel data for RF probe loss
-    probe_loss_frequency, probe_loss = read_excel_data(excel_filepath)
-    interpolated_probe = interp1d(probe_loss_frequency, probe_loss, kind='cubic')
+        # Now update the calibrated_rf calculation to include the new interpolated loss values from s2p file
+        calibrated_rf = np.array(powers) + np.abs(interpolated_loss.real)
+        calibrated_rf = np.round(calibrated_rf, 2) # Round the data
 
-    # Example beat frequencies (replace with your actual beat frequencies)
-    interpolated_loss = f(beat_freqs_pow)
-    interpolated_probe_loss = interpolated_probe(beat_freqs_pow)
+    except:
+        print("Error reading network analyzer file.")
 
-    # Make sure both np arrays
-    interpolated_loss = np.array(interpolated_loss)
-    interpolated_probe_loss = np.array(interpolated_probe_loss)
-    
+    try:
 
-    # Now update the calibrated_rf calculation to include the new interpolated loss values
-    calibrated_rf = np.array(powers) + np.abs(interpolated_loss.real) + np.abs(interpolated_probe_loss)
-    calibrated_rf = np.round(calibrated_rf, 2)
+        # Gather excel data for RF probe loss
+        probe_loss_frequency, probe_loss = read_excel_data(excel_filepath)
+        interpolated_probe = interp1d(probe_loss_frequency, probe_loss, kind='cubic')
+
+        
+        interpolated_probe_loss = interpolated_probe(beat_freqs_pow)
+
+        
+        interpolated_probe_loss = np.array(interpolated_probe_loss)
+        
+
+        # Now update the calibrated_rf calculation to include the new interpolated loss values from excel file
+        calibrated_rf = np.array(powers)  + np.abs(interpolated_probe_loss)
+        calibrated_rf = np.round(calibrated_rf, 2) # Round the data
+    except:
+        print("Error reading excel file.")
     
     # Static plot at the end
     line1.set_data(steps, beat_freqs)
