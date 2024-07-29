@@ -67,15 +67,15 @@ def measure_peak_frequency(spectrum_analyzer):
     try:
         """Perform peak search and return the peak frequency within the current span."""
         spectrum_analyzer.write('MKPK HI')
-        time.sleep(0.4)  # Allow time for the peak search to complete
+        time.sleep(0.1)  # Allow time for the peak search to complete
         peak_freq_1 = spectrum_analyzer.query('MKF?')
-        time.sleep(0.4)
+        time.sleep(0.1)
         spectrum_analyzer.write('MKPK HI')
-        time.sleep(0.4)  # Allow time for the peak search to complete
+        time.sleep(0.1)  # Allow time for the peak search to complete
         peak_freq_2 = spectrum_analyzer.query('MKF?')
-        time.sleep(0.4)
+        time.sleep(0.1)
         spectrum_analyzer.write('MKPK HI')
-        time.sleep(0.4)  # Allow time for the peak search to complete
+        time.sleep(0.1)  # Allow time for the peak search to complete
         peak_freq_3 = spectrum_analyzer.query('MKF?')
 
         peak_freq = min(peak_freq_1, peak_freq_2, peak_freq_3)
@@ -762,34 +762,37 @@ try:
     ############################################################################################################################################################
     
     output_input = input("Would you like to output the data to a .txt file? (Yes/No): ").strip().upper()
-    while output_input not in ['YES', 'NO', 'Y', 'N']: # Loop until get a valid input
+    while output_input not in ['YES', 'NO', 'Y', 'N']:  # Loop until get a valid input
         output_input = input("Invalid input. Would you like to output the data to a .txt file? (Yes (Y) / No (N)): ").strip().upper()
-    if output_input == 'Yes' or output_input == 'Y':
+
+    if output_input in ['YES', 'Y']:
         # Get user input for file name
-        filename_input= input("Enter your desired file name: ").strip().upper()
+        filename_input = input("Enter your desired file name: ").strip().upper()
         extension = '.txt'
         counter = 1
 
-        txt_filename = f'{filename_input}{extension}'
+        # Create the directory if it doesn't exist
+        directory = "measurement_data"
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        txt_filename = os.path.join(directory, f'{filename_input}{extension}')
         while os.path.exists(txt_filename):
-            txt_filename = f'{filename_input}_{counter}{extension}'
+            txt_filename = os.path.join(directory, f'{filename_input}_{counter}{extension}')
             counter += 1
 
-
-        device_num = input("Enter the device number: ") # Get the device number from the user
-        comment = input("Enter any trial comments: ").strip().upper() # Get any comments from the user
-        keithley_voltage = keithley.query(":SOUR:VOLT:LEV:IMM:AMPL?").strip() # Get the keithley voltage from the keithley
-        keithley_voltage = f"{float(keithley_voltage):.3e}" # Format the keithley voltage for display
-        keithley.write(":SYSTem:LOCal") # Set the keithley back to local mode
-        #initial_current = input("Enter the initial photocurrent: ").strip().upper() # Get the initial photocurrent from the user
-
+        device_num = input("Enter the device number: ")  # Get the device number from the user
+        comment = input("Enter any trial comments: ").strip().upper()  # Get any comments from the user
+        keithley_voltage = keithley.query(":SOUR:VOLT:LEV:IMM:AMPL?").strip()  # Get the keithley voltage from the keithley
+        keithley_voltage = f"{float(keithley_voltage):.3e}"  # Format the keithley voltage for display
+        keithley.write(":SYSTem:LOCal")  # Set the keithley back to local mode
 
         with open(txt_filename, 'w') as f:
             f.write("DEVICE NUMBER: " + str(device_num) + "\n")
             f.write("COMMENTS: " + comment + "\n")
             f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
             f.write("INITIAL PHOTOCURRENT: " + str(initial_current) + " (A)" + "\n")
-            f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " +str(laser_4_cal) + " (nm) :" + " DELAY: " + str(delay) + " (s) " + "\n")
+            f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " + str(laser_4_cal) + " (nm) :" + " DELAY: " + str(delay) + " (s) " + "\n")
             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
             f.write("\n")
