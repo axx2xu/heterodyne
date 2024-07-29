@@ -208,3 +208,9 @@
 - Little difference was found adding additional averaging from multiple query points for the ESA reading compared to single point reading.
 
 ---
+
+# Contact
+For instructions with video demonstration, access the "Python Heterodyne Automation Slides" powerpoint file. To view the slides without video demonstration, access the "Python Heterodyne Automation Slides" pdf file.
+
+If the program is not working correctly, or if you have any questions, feel free to reach out to me by email:
+axx2xu@virginia.edu
