@@ -1,17 +1,15 @@
-from pymeasure.adapters import VISAAdapter
 import time
 import math
 import pyvisa
 import os
 import sys
 import matplotlib.pyplot as plt
-import skrf as rf
 import numpy as np
 import pandas as pd
 import openpyxl
-from scipy.interpolate import interp1d
 import threading
 import msvcrt
+import re
 
 
 ################################################################################################################################################################################
@@ -121,24 +119,71 @@ def read_excel_data(filepath):
 
     return np.array(frequency), np.array(loss)
 
-def read_s2p_header(filepath):
+def read_s2p_file(filepath):
+    frequencies = []
+    s12 = []
+    s21 = []
+    
     with open(filepath, 'r') as file:
         lines = file.readlines()
     
-    freq_unit = 'Hz'
-    data_format = 'dB'
+    freq_unit = 'hz'
+    data_format = 'db'
     
     for line in lines:
         if line.startswith('#'):
             parts = line.split()
-            for i, part in enumerate(parts):
+            for part in parts:
                 if part.lower() in ['hz', 'khz', 'mhz', 'ghz']:
                     freq_unit = part.lower()
                 elif part.lower() in ['ri', 'db', 'ma']:
                     data_format = part.upper()
-            break
+            continue
+        
+        if not line.startswith('!') and not line.startswith('#'):  # Ignore comment and header lines
+            values = re.split(r'\s+', line.strip())
+            if len(values) >= 9:  # Ensure there are enough values in the line
+                frequencies.append(float(values[0]))
+                s21.append(float(values[3]))  # S21 in dB
+                s12.append(float(values[5]))  # S12 in dB
     
-    return freq_unit, data_format
+    frequencies = np.array(frequencies)
+    s_avg = (np.array(s12) + np.array(s21)) / 2
+
+    # Convert frequencies to GHz if needed
+    if freq_unit == 'khz':
+        frequencies = frequencies / 1e6
+    elif freq_unit == 'mhz':
+        frequencies = frequencies / 1e3
+    elif freq_unit == 'hz':
+        frequencies = frequencies / 1e9
+    
+    return frequencies, s_avg
+
+def custom_linear_interpolation(x, y, x_new):
+    """Perform linear interpolation on given data points."""
+    x = np.asarray(x)
+    y = np.asarray(y)
+    x_new = np.asarray(x_new)
+    y_new = np.zeros_like(x_new)
+
+    for i, xi in enumerate(x_new):
+        if xi <= x[0]:
+            y_new[i] = y[0]
+        elif xi >= x[-1]:
+            y_new[i] = y[-1]
+        else:
+            # Find the interval [x_k, x_k+1] where x_k <= xi < x_k+1
+            k = np.searchsorted(x, xi) - 1
+            x_k = x[k]
+            x_k1 = x[k + 1]
+            y_k = y[k]
+            y_k1 = y[k + 1]
+
+            # Linear interpolation formula
+            y_new[i] = y_k + (y_k1 - y_k) * (xi - x_k) / (x_k1 - x_k)
+
+    return y_new
 
 flag = True
 exit_event = threading.Event()
@@ -641,77 +686,38 @@ try:
     #                                   Calculate Calibrated RF from network analyzer file
     ############################################################################################################################################################
 
+    # Replace the interpolation part with custom_linear_interpolation
 
+    calibrated_rf = np.array(powers)  # Initialize the calibrated RF power with the raw RF power
     try:
-        # Read the header to detect the units
-        freq_unit, data_format = read_s2p_header(filepath)
-
-        print(freq_unit, data_format)
-
-        # Load the .s2p file
-        s2p_file = rf.Network(filepath)
-
-        # Gather s12 and s21 data
-        s12 = s2p_file.s_db[:,0,1]
-        s21 = s2p_file.s_db[:,1,0]
-        s_avg = (s12 + s21) / 2
-
-        frequencies = s2p_file.f
-
-        # If needed, convert frequency to GHz
-        if(freq_unit == 'khz'):
-            frequencies = frequencies / 1e6
-        elif(freq_unit == 'mhz'):
-            frequencies = frequencies / 1e3
-        elif(freq_unit == 'hz'):
-            frequencies = frequencies / 1e9
-
-        # If needed, convert s-parameters to dB
-        if(data_format == 'RI'):
-            s12 = 20 * np.log10(np.sqrt(np.real(s12)**2 + np.imag(s12)**2))
-            s21 = 20 * np.log10(np.sqrt(np.real(s21)**2 + np.imag(s21)**2))
-            s_avg = 20 * np.log10(np.sqrt(np.real(s_avg)**2 + np.imag(s_avg)**2))
-
-        elif(data_format == 'MA'):
-            s12 = 20 * np.log10(np.abs(s12))
-            s21 = 20 * np.log10(np.abs(s21))
-            s_avg = 20 * np.log10(np.abs(s_avg))
-        
-        elif(data_format == 'DB'): 
-            pass
+        # Read the .s2p file and extract data
+        frequencies, s_avg = read_s2p_file(filepath)
 
         # Interpolate the data
-        f = interp1d(frequencies, s_avg, kind='cubic')
-        interpolated_loss = f(beat_freqs_pow)
+        interpolated_loss = custom_linear_interpolation(frequencies, s_avg, beat_freqs_pow)
 
         # Make into np array
         interpolated_loss = np.array(interpolated_loss)
 
         # Now update the calibrated_rf calculation to include the new interpolated loss values from s2p file
-        calibrated_rf = np.array(powers) + np.abs(interpolated_loss.real)
+        calibrated_rf += np.abs(interpolated_loss.real)
         calibrated_rf = np.round(calibrated_rf, 2) # Round the data
-
     except:
         print("Error reading network analyzer file.")
 
     try:
-
         # Gather excel data for RF probe loss
         probe_loss_frequency, probe_loss = read_excel_data(excel_filepath)
-        interpolated_probe = interp1d(probe_loss_frequency, probe_loss, kind='cubic')
+        interpolated_probe_loss = custom_linear_interpolation(probe_loss_frequency, probe_loss, beat_freqs_pow)
 
-        
-        interpolated_probe_loss = interpolated_probe(beat_freqs_pow)
-
-        
         interpolated_probe_loss = np.array(interpolated_probe_loss)
-        
 
         # Now update the calibrated_rf calculation to include the new interpolated loss values from excel file
-        calibrated_rf = np.array(powers)  + np.abs(interpolated_probe_loss)
+        calibrated_rf += np.abs(interpolated_probe_loss)
         calibrated_rf = np.round(calibrated_rf, 2) # Round the data
     except:
         print("Error reading excel file.")
+
     
     # Static plot at the end
     line1.set_data(steps, beat_freqs)
