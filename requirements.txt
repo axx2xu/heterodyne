@@ -1,1 +1,8 @@
-
+pyvisa
+matplotlib
+scikit-rf
+numpy
+pandas
+openpyxl
+scipy
+regex
