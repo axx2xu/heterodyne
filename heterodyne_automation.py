@@ -563,6 +563,8 @@ try:
     ax2.set_ylabel('Laser 4 Wavelength (nm)', color=color)
     line2, = ax2.plot([], [], marker='x', linestyle='--', color=color)
     ax2.tick_params(axis='y', labelcolor=color)
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.3f}'.rstrip('0').rstrip('.')))
+
 
     # Setup second subplot (ax3)
     color = 'tab:blue'
