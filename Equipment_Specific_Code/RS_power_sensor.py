@@ -45,7 +45,7 @@ def main():
         print("Configuring measurement settings...")
         sensor.write('INIT:CONT OFF')
         sensor.write('SENS:FUNC "POW:AVG"')
-        sensor.write('SENS:FREQ 1e9')
+        sensor.write('SENS:FREQ 2e9')
         sensor.write('SENS:AVER:COUN:AUTO ON')
         sensor.write('SENS:AVER:COUN 16')
         sensor.write('SENS:AVER:STAT ON')

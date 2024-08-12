@@ -1,0 +1,15 @@
+DEVICE NUMBER: 12345
+COMMENTS: Test run for experiment
+KEITHLEY VOLTAGE: 5.000e-01 V
+INITIAL PHOTOCURRENT: 10.5 (mA)
+STARTING WAVELENGTH FOR LASER 3: 1550 (nm) : STARTING WAVELENGTH FOR LASER 4: 1560 (nm) : DELAY: 1.0 (s) 
+DATE: 08/07/2024
+TIME: 12:05:52
+RUN TIME: 300 (s)
+
+F_BEAT(GHz)	PHOTOCURRENT (mA)	Raw RF POW (dBm)	RF Loss (dB)		Cal RF POW (dBm)	VOA P Actual (dBm)
+10.00     	1.0000e-03		-30.00    		0.50      		-29.50    		-31.000   
+20.00     	2.0000e-03		-29.00    		0.40      		-28.60    		-30.000   
+30.00     	3.0000e-03		-28.00    		0.30      		-27.70    		-29.000   
+40.00     	4.0000e-03		-27.00    		0.20      		-26.80    		-28.000   
+50.00     	5.0000e-03		-26.00    		0.10      		-25.90    		-27.000   

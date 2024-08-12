@@ -1,0 +1,17 @@
+DEVICE NUMBER: 1
+COMMENTS: S2P Loss File: None
+KEITHLEY VOLTAGE: 0.0 V
+112.59 s
+Excel Loss File: None
+S2P Loss File: None
+INITIAL PHOTOCURRENT: -0.997 (mA)
+STARTING WAVELENGTH FOR LASER 3: 1555.0 (nm) : STARTING WAVELENGTH FOR LASER 4: 1554.3024175247074 (nm) : DELAY: 3.0 (s) 
+DATE: 08/12/2024
+TIME: 16:07:52
+
+F_BEAT(GHz)	PHOTOCURRENT (mA)	Raw RF POW (dBm)	RF Loss (dB)		Cal RF POW (dBm)	VOA P Actual (dBm)
+15.67     	-9.9700e-01		-24.20    		2.85      		-21.35    		7.135     
+14.50     	-9.9700e-01		-22.96    		3.08      		-19.88    		7.131     
+13.17     	-9.9600e-01		-22.00    		2.76      		-19.24    		7.127     
+12.00     	-9.9500e-01		-22.11    		2.40      		-19.72    		7.125     
+10.67     	-9.9500e-01		-22.13    		2.18      		-19.95    		7.123     

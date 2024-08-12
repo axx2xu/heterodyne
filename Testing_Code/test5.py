@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, simpledialog
+from tkinter import ttk, messagebox, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from openpyxl import Workbook
 import matplotlib.pyplot as plt
@@ -7,16 +7,7 @@ import threading
 import time
 import math
 import numpy as np
-import sys
-import os
-
-# Assume all necessary imports for instrument communication are done here
-# For example:
-# import pyvisa
-# from some_module import measure_peak_frequency, measure_wavelength_beat, set_laser_wavelength
-# and so on...
-
-# Define your helper functions here (e.g., read_s2p_file, custom_linear_interpolation, etc.)
+import mplcursors
 
 # Initialize the main Tkinter window
 root = tk.Tk()
@@ -136,6 +127,13 @@ ax5.tick_params(axis='y', labelcolor=color5)
 ax5.grid(True)
 
 fig.tight_layout()
+
+# Add hover functionality using mplcursors, but only annotate markers (not the line itself)
+mplcursors.cursor(line1, hover=True)
+mplcursors.cursor(line2, hover=True)
+mplcursors.cursor(line3, hover=True)
+mplcursors.cursor(line4, hover=True)
+mplcursors.cursor(line5, hover=True)
 
 # Define the data collection function
 def data_collection():
@@ -326,7 +324,10 @@ def on_save():
             ])
 
         # Adjust column widths
+        count = 0
         for column in ws.columns:
+            if(count == 1):
+                continue # Don't reformat the second column as long comments will make the column too wide
             max_length = 0
             column = list(column)  # Convert the column to a list
             for cell in column:
@@ -338,6 +339,7 @@ def on_save():
                     pass
             adjusted_width = (max_length + 2)  # Add a little extra space
             ws.column_dimensions[column[0].column_letter].width = adjusted_width
+            count+=1 # Increment column count
 
         # Save the workbook
         excel_file_path = file_path.replace(".txt", ".xlsx")
