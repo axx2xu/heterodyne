@@ -1,8 +1,6 @@
 pyvisa
-matplotlib==3.4.3
-scikit-rf
-numpy==1.21.0
-pandas
+matplotlib
+numpy
 openpyxl
-scipy
+tk
 mplcursors
