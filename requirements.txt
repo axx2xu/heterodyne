@@ -2,6 +2,5 @@ pyvisa
 matplotlib
 numpy
 openpyxl
-threading==1.0.0
 tk
 mplcursors
