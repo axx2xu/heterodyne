@@ -182,6 +182,8 @@ def calculate_calibrated_rf(powers, beat_freqs_pow, s2p_filename=None, excel_fil
     #
     calibrated_rf = np.array(powers)  # Initialize the calibrated RF power with the raw RF power
     rf_loss = np.zeros_like(calibrated_rf)  # Initialize the list to store the RF loss values
+    rf_probe_loss = np.zeros_like(calibrated_rf)  # Initialize the list to store the RF probe loss values
+    rf_link_loss = np.zeros_like(calibrated_rf)  # Initialize the list to store the RF link loss values
 
     # Apply calibration from .s2p file
     if s2p_filename:
@@ -197,6 +199,7 @@ def calculate_calibrated_rf(powers, beat_freqs_pow, s2p_filename=None, excel_fil
 
             # Update the calibrated_rf calculation to include the new interpolated loss values from .s2p file
             rf_loss += np.abs(interpolated_loss)
+            rf_probe_loss += np.abs(interpolated_loss)
             calibrated_rf += np.abs(interpolated_loss.real)
             calibrated_rf = np.round(calibrated_rf, 2)  # Round the data
         except Exception as e:
@@ -214,12 +217,13 @@ def calculate_calibrated_rf(powers, beat_freqs_pow, s2p_filename=None, excel_fil
 
             # Update the calibrated_rf calculation to include the new interpolated loss values from Excel file
             rf_loss += np.abs(interpolated_probe_loss)
+            rf_link_loss += np.abs(interpolated_probe_loss)
             calibrated_rf += np.abs(interpolated_probe_loss)
             calibrated_rf = np.round(calibrated_rf, 2)  # Round the data
         except Exception as e:
             update_message_feed("No excel file found or error in processing:", e)
 
-    return calibrated_rf, rf_loss
+    return calibrated_rf, rf_loss, rf_probe_loss, rf_link_loss
 
 
 # Start threading events
@@ -343,6 +347,8 @@ beat_freq_and_power = []  # List of tuples: (beat_freq, output_dbm, current, p_a
 calibrated_rf = []
 photo_currents = []
 rf_loss = []
+rf_probe_loss = []
+rf_link_loss = []
 powers = []
 p_actuals = []
 
@@ -422,7 +428,8 @@ def data_collection():
     stop_event.clear()
     data_ready_event.clear()
 
-    global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, powers, p_actuals, run_time, excel_filename, s2p_filename
+    global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, rf_probe_loss, rf_link_loss
+    global powers, p_actuals, sweep_run_time, total_run_time, excel_filename, s2p_filename
     
     """Get user inputs and start data collection process"""
 
@@ -441,8 +448,6 @@ def data_collection():
     comment_var = tk.StringVar()
     comment_entry = ttk.Entry(input_window, textvariable=comment_var)
     comment_entry.grid(row=1, column=1, padx=10, pady=10)
-
-    
 
       # Function to close the pop-up window and prompt for file path
     def choose_file_and_close():
@@ -467,6 +472,8 @@ def data_collection():
     try:
         open_instruments()
         time.sleep(1)
+
+        start_time = time.time()
 
         # Get user inputs for the measurement
         laser_3_WL = laser_3_var.get()
@@ -703,7 +710,7 @@ def data_collection():
         laser_4_step = (end_freq - start_freq) / num_steps  # Calculate the step size for laser 4 frequency
 
         update_message_feed("BEGINNING MEASUREMENT LOOP...")
-        time_start = time.time() # Start time for the measurement loop
+        start_time_sweep = time.time() # Start time for the measurement loop
         last_beat_freq = current_freq # Update last frequency
 
          # Get initial photocurrent for text output
@@ -726,11 +733,12 @@ def data_collection():
                 update_message_feed("Data collection stopped by user.")
                 looping = False
                 time_end = time.time() # End time for the measurement loop
-                run_time = time_end - time_start # Calculate the total run time
+                sweep_run_time = time_end - start_time_sweep # Calculate the total run time
+                total_run_time = time_end - start_time # Calculate the total run time
 
                 # Perform calibration once the loop finishes
                 beat_freqs, powers, photo_currents, p_actuals = zip(*beat_freq_and_power)
-                calibrated_rf, rf_loss = calculate_calibrated_rf(powers, beat_freqs, s2p_filename=s2p_filename, excel_filename=excel_filename)
+                calibrated_rf, rf_loss, rf_probe_loss, rf_link_loss = calculate_calibrated_rf(powers, beat_freqs, s2p_filename=s2p_filename, excel_filename=excel_filename)
 
                 # Update the plots with the final calibrated data
                 data_ready_event.set()
@@ -844,11 +852,12 @@ def data_collection():
         looping = False
         update_message_feed("Data collection completed.")
         time_end = time.time() # End time for the measurement loop
-        run_time = time_end - time_start # Calculate the total run time
+        sweep_run_time = time_end - start_time_sweep # Calculate the total run time
+        total_run_time = time_end - start_time # Calculate the total run time
 
         # Perform calibration once the loop finishes
         beat_freqs, powers, photo_currents, p_actuals = zip(*beat_freq_and_power)
-        calibrated_rf, rf_loss = calculate_calibrated_rf(powers, beat_freqs, s2p_filename=s2p_filename, excel_filename=excel_filename)
+        calibrated_rf, rf_loss, rf_probe_loss, rf_link_loss = calculate_calibrated_rf(powers, beat_freqs, s2p_filename=s2p_filename, excel_filename=excel_filename)
 
         # Update the plots with the final calibrated data
         data_ready_event.set()
@@ -860,7 +869,7 @@ def data_collection():
         keithley.write(":SYSTem:LOCal")  # Set the keithley back to local mode
 
         # Adjust subplot parameters to add space for comments
-        fig.subplots_adjust(top=0.85)
+        fig.subplots_adjust(top=0.8)
 
         # Add comments to the plot
         comments = [
@@ -868,7 +877,8 @@ def data_collection():
             f"Comments: {user_comment}",
             f"Date: {time.strftime('%m/%d/%Y')}",
             f"Time: {time.strftime('%H:%M:%S')}",
-            f"Run Time: {run_time:.2f} s",
+            f"Frequency Sweep Run Time: {sweep_run_time:.2f} s",
+            f"Total Run Time: {total_run_time:.2f} s",
             f"Keithley Voltage: {keithley_voltage} V",
             f"Excel Loss File: {excel_filename if 'excel_filename' in globals() else 'None'}",
             f"S2P Loss File: {s2p_filename if 's2p_filename' in globals() else 'None'}"
@@ -923,7 +933,8 @@ def data_collection():
             f.write("DEVICE NUMBER: " + str(device_num) + "\n")
             f.write("COMMENTS: " + user_comment + "\n")
             f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
-            f.write("RUN TIME: " + str(f"{run_time:.2f}") + " s" + "\n"),
+            f.write("FREQUENCY SWEEP RUN TIME: " + str(f"{sweep_run_time:.2f}") + " s" + "\n"),
+            f.write("TOTAL RUN TIME: " + str(f"{total_run_time:.2f}") + " s" + "\n"),
             f.write("RF Link Loss File (.xlsx): " + str(excel_filename if 'excel_filename' in globals() else 'None') + "\n")
             f.write("RF Probe Loss File (.s2p): " + str(s2p_filename if 's2p_filename' in globals() else 'None') + "\n")
             f.write("INITIAL PHOTOCURRENT: " + str(photo_currents[0]) + " (mA)" + "\n")
@@ -931,9 +942,9 @@ def data_collection():
             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
             f.write("\n")
-            f.write("F_BEAT(GHz)\tPHOTOCURRENT (mA)\tRaw RF POW (dBm)\tRF Loss (dB)\t\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
+            f.write("F_BEAT(GHz)\tPHOTOCURRENT (mA)\tRaw RF POW (dBm)\tTotal RF Loss (dB)\t\tProbe RF Loss (dB)\t\tLink RF Loss (dB)\t\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
             for i in range(len(steps)):
-                f.write(f"{beat_freqs[i]:<10.2f}\t{float(photo_currents[i]):<10.4e}\t\t{powers[i]:<10.2f}\t\t{rf_loss[i]:<10.2f}\t\t{calibrated_rf[i]:<10.2f}\t\t{p_actuals[i]:<10.3f}\n")
+                f.write(f"{beat_freqs[i]:<10.2f}\t{float(photo_currents[i]):<10.4e}\t\t{powers[i]:<10.2f}\t\t{rf_loss[i]:<10.2f}\t\t{rf_probe_loss[i]:<10.2f}\t\t{rf_link_loss[i]:<10.2f}\t\t{calibrated_rf[i]:<10.2f}\t\t{p_actuals[i]:<10.3f}\n")
 
         # Save the plot as an image
         
@@ -953,7 +964,8 @@ def data_collection():
         ws.append(["STARTING WAVELENGTH FOR LASER 3", f"{laser_3_WL} (nm)"]) 
         ws.append(["STARTING WAVELENGTH FOR LASER 4", f"{laser_4_wavelengths[0]:.3f} (nm)"])
         ws.append(["DELAY", f"{delay_var.get()} (s)"])
-        ws.append(["RUN TIME", f"{run_time:.2f} s"])
+        ws.append(["FREQUENCY SWEEP RUN TIME", f"{sweep_run_time:.2f} s"])
+        ws.append(["TOTAL RUN TIME", f"{total_run_time:.2f} s"])
         ws.append(["EXCEL LOSS FILE", excel_filename if 'excel_filename' in globals() else 'None'])
         ws.append(["S2P LOSS FILE", s2p_filename if 's2p_filename' in globals() else 'None'])
         ws.append(["DATE", time.strftime("%m/%d/%Y")])
@@ -961,7 +973,7 @@ def data_collection():
         ws.append([])  # Add an empty row for spacing
 
         # Write the table header
-        ws.append(["F_BEAT (GHz)", "PHOTOCURRENT (mA)", "Raw RF POW (dBm)", "RF Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
+        ws.append(["F_BEAT (GHz)", "PHOTOCURRENT (mA)", "Raw RF POW (dBm)", "Total RF Loss (dB)", "RF Probe Loss (dB)", "RF Link Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
 
         # Write the data rows
         for i in range(len(steps)):
@@ -970,6 +982,8 @@ def data_collection():
                 f"{float(photo_currents[i]):.4e}",
                 f"{powers[i]:.2f}",
                 f"{rf_loss[i]:.2f}",
+                f"{rf_probe_loss[i]:.2f}",
+                f"{rf_link_loss[i]:.2f}",
                 f"{calibrated_rf[i]:.2f}",
                 f"{p_actuals[i]:.3f}"
             ])
@@ -1050,7 +1064,7 @@ def on_stop():
         update_message_feed("Data collection will be stopped.")
 
 def reset_program():
-    global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, powers, p_actuals, stop_event, data_ready_event
+    global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, rf_probe_loss, rf_link_loss, powers, p_actuals, stop_event, data_ready_event
 
     # Reset all the lists and variables
     steps = []
@@ -1060,6 +1074,8 @@ def reset_program():
     calibrated_rf = []
     photo_currents = []
     rf_loss = []
+    rf_probe_loss = []
+    rf_link_loss = []
     powers = []
     p_actuals = []
 
