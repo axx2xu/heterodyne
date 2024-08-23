@@ -2,7 +2,6 @@ import time
 import math
 import pyvisa
 import sys
-import matplotlib.pyplot as plt
 import numpy as np
 import openpyxl
 from openpyxl import Workbook
@@ -12,6 +11,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import mplcursors
+from matplotlib.figure import Figure
+from matplotlib.ticker import FuncFormatter
 
 # Initialize the VISA resource manager
 rm = pyvisa.ResourceManager()
@@ -295,7 +296,7 @@ excel_file_button = ttk.Button(input_frame, text="Browse", command=lambda: selec
 excel_file_button.grid(row=9, column=2, padx=5, pady=5)
 
 
-tk.Label(input_frame, text="Enable Start Beat Frequency Search:").grid(row=10, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="Enable Automatic Start Beat Frequency Search:").grid(row=10, column=0, padx=5, pady=5, sticky="e")
 enable_search_var = tk.BooleanVar(value=True)  # Default is True (enabled)
 enable_search_checkbox = ttk.Checkbutton(input_frame, variable=enable_search_var)
 enable_search_checkbox.grid(row=10, column=1, padx=5, pady=5, sticky="w")
@@ -318,7 +319,8 @@ cancel_button.grid(row=15, column=0, columnspan=2, pady=10)
 tk.Label(input_frame, text="NOTE: This will reset the program and no data will be saved").grid(row=16, column=0, columnspan=2, pady=2)
 
 # Initialize Matplotlib Figure and Axes
-fig, axes = plt.subplots(2, 2, figsize=(8, 6))
+fig = Figure(figsize=(8, 6))
+axes = fig.subplots(2, 2)
 fig.suptitle("Measurement Plots", fontsize=16)
 ax1, ax3, ax4, ax5 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
 ax2 = ax1.twinx()  # Create a twin y-axis for the first subplot
@@ -359,7 +361,7 @@ ax2.set_ylabel('Laser 4 Wavelength (nm)', color=color2)
 line2, = ax2.plot([], [], linestyle='--', color=color2)  # Line without markers
 markers2, = ax2.plot([], [], 'x', color=color2)  # Markers only
 ax2.tick_params(axis='y', labelcolor=color2)
-ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.3f}'.rstrip('0').rstrip('.')))
+ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{x:.3f}'.rstrip('0').rstrip('.')))
 
 # Setup second subplot (ax3)
 color3 = 'tab:blue'
@@ -399,21 +401,27 @@ mplcursors.cursor(markers3, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers4, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers5, hover=mplcursors.HoverMode.Transient)
 
+
+
 # Create VISA adapters with the connected equipment - send error message to message feed in GUI if connection fails
-try:
-    ecl_adapter = rm.open_resource(ecl_adapter_GPIB)  # Update with your actual GPIB address
-    wavelength_meter = rm.open_resource(wavelength_meter_GPIB)  # Update with your actual GPIB address
-    spectrum_analyzer = rm.open_resource(spectrum_analyzer_GPIB)  # Update with your actual GPIB address
-    keithley = rm.open_resource(keithley_GPIB)  # Update with your actual GPIB address
-    keithley.write(":SYSTem:LOCal")
-    RS_power_sensor = rm.open_resource(RS_power_sensor_GPIB) # Update with your actual VISA address for the RS NRP-Z58 sensor
-    voa = rm.open_resource(voa_GPIB)  # Update with your actual GPIB address
-except:
-    update_message_feed("Error connecting to VISA devices. Check GPIB addresses and connections.")
+def open_instruments():
+    global ecl_adapter, wavelength_meter, spectrum_analyzer, keithley, RS_power_sensor, voa
+    try:
+        ecl_adapter = rm.open_resource(ecl_adapter_GPIB)  # Update with your actual GPIB address
+        wavelength_meter = rm.open_resource(wavelength_meter_GPIB)  # Update with your actual GPIB address
+        spectrum_analyzer = rm.open_resource(spectrum_analyzer_GPIB)  # Update with your actual GPIB address
+        keithley = rm.open_resource(keithley_GPIB)  # Update with your actual GPIB address
+        keithley.write(":SYSTem:LOCal")
+        RS_power_sensor = rm.open_resource(RS_power_sensor_GPIB) # Update with your actual VISA address for the RS NRP-Z58 sensor
+        voa = rm.open_resource(voa_GPIB)  # Update with your actual GPIB address
+    except:
+        update_message_feed("Error connecting to VISA devices. Check GPIB addresses and connections.")
 
 # Define the data collection function
 def data_collection():
     stop_event.clear()
+    data_ready_event.clear()
+
     global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, powers, p_actuals, run_time, excel_filename, s2p_filename
     
     """Get user inputs and start data collection process"""
@@ -457,6 +465,9 @@ def data_collection():
     save_button.grid(row=2, column=0, columnspan=2, pady=20)
 
     try:
+        open_instruments()
+        time.sleep(1)
+
         # Get user inputs for the measurement
         laser_3_WL = laser_3_var.get()
         laser_4_WL = laser_4_var.get()
@@ -510,7 +521,7 @@ def data_collection():
             while current_freq >= 0.5:
                 if stop_event.is_set():
                     update_message_feed("Data collection stopped by user.")
-                    break
+                    return
 
                 # Calculate the new wavelength for laser 4
                 laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
@@ -532,7 +543,7 @@ def data_collection():
                 if last_beat_freq is not None and current_freq > last_beat_freq:
                     if stop_event.is_set():
                         update_message_feed("Data collection stopped by user.")
-                        break
+                        return
                     if current_freq >= 1:
                         consecutive_increases += 1
                         if consecutive_increases >= max_consecutive_increases:
@@ -564,6 +575,9 @@ def data_collection():
                     consecutive_increases = 0
 
                 # Update last_beat_freq at the end of the loop
+                if stop_event.is_set():
+                    update_message_feed("Data collection stopped by user.")
+                    return
                 
                 if wl_meter_beat_freq >= 50:
                     update_message_feed(f"Beat Frequency (Wavelength Meter): {wl_meter_beat_freq} GHz")
@@ -846,7 +860,7 @@ def data_collection():
         keithley.write(":SYSTem:LOCal")  # Set the keithley back to local mode
 
         # Adjust subplot parameters to add space for comments
-        plt.subplots_adjust(top=0.85)
+        fig.subplots_adjust(top=0.85)
 
         # Add comments to the plot
         comments = [
@@ -866,23 +880,17 @@ def data_collection():
         y_comment_step = 0.02  # Step size for Y position
 
         for i, comment in enumerate(comments):
-            plt.figtext(x_comment, y_comment_start - i * y_comment_step, comment, wrap=True, horizontalalignment='center', fontsize=10)
+            fig.text(x_comment, y_comment_start - i * y_comment_step, comment, wrap=True, horizontalalignment='center', fontsize=10)
 
-        # Maximize the window for different backends
-        manager = plt.get_current_fig_manager()
+        # Maximize the window for different backends using Tkinter's window management
         try:
-            # TkAgg backend
-            manager.window.state('zoomed')
+            root.state('zoomed')  # Maximizes the window for Windows
         except AttributeError:
             try:
-                # Qt5Agg backend
-                manager.window.showMaximized()
+                root.attributes('-fullscreen', True)  # Alternative approach to maximize the window cross-platform
             except AttributeError:
-                try:
-                    # WxAgg backend
-                    manager.window.Maximize(True)
-                except AttributeError:
-                    pass  # If none of these work, just continue
+                pass  # If none of these work, just continue
+
 
         # Adjust title and axis label font properties
         title_font = {'size': '14', 'weight': 'bold'}
@@ -906,7 +914,8 @@ def data_collection():
         ax5.set_ylabel('Calibrated RF Power (dBm)', fontdict=label_font)
 
         # Adjust layout
-        plt.tight_layout(rect=[0, 0, 1, 0.85])
+        fig.tight_layout(rect=[0, 0, 1, 0.85])
+        canvas.draw()
 
         laser_3_WL = laser_3_var.get()
 
@@ -1056,10 +1065,12 @@ def reset_program():
 
     # Clear the message feed
     message_feed.delete(1.0, tk.END)
+    
+    # Remove all text items from the figure except the suptitle
+    texts_to_remove = [txt for txt in fig.texts if txt != fig._suptitle]
 
-    # Reset the stop_event and data_ready_event
-    stop_event.clear()
-    data_ready_event.clear()
+    for txt in texts_to_remove:
+        txt.remove()
 
     # Clear the data from the plots without removing formatting
     line1.set_data([], [])
@@ -1084,6 +1095,10 @@ def reset_program():
     # Restart the plot updating loop
     root.after(100, update_plots)
 
+    # Reset the event flags
+    stop_event.clear()
+    data_ready_event.clear()
+
     update_message_feed("Program reset and ready to start again.")
 
 
@@ -1097,7 +1112,7 @@ def on_closing():
 def on_cancel():
     if messagebox.askyesno("Confirm Exit", "Are you sure you want to reset the program?"):
         stop_event.set()  # Ensure any ongoing measurements are stopped
-        time.sleep(2) # Wait for the measurements to stop
+        time.sleep(4) # Wait for the measurements to stop
         reset_program()  # Reset the program for a new start
         
 
@@ -1109,5 +1124,3 @@ root.after(100, update_plots)
 
 # Start the Tkinter main loop
 root.mainloop()
-
-update_message_feed("Program terminated gracefully.")
