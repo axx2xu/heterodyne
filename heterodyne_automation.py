@@ -313,9 +313,9 @@ tk.Label(input_frame, text="NOTE: This will only stop data collection during the
 message_feed = tk.Text(input_frame, wrap="word", height=10, width=50)
 message_feed.grid(row=14, column=0, columnspan=3, padx=5, pady=5)
 
-cancel_button = ttk.Button(input_frame, text="CLOSE PROGRAM", command=lambda: on_cancel())
+cancel_button = ttk.Button(input_frame, text="RESET", command=lambda: on_cancel())
 cancel_button.grid(row=15, column=0, columnspan=2, pady=10)
-tk.Label(input_frame, text="NOTE: This will close the entire program and will not save any data").grid(row=16, column=0, columnspan=2, pady=2)
+tk.Label(input_frame, text="NOTE: This will reset the program and no data will be saved").grid(row=16, column=0, columnspan=2, pady=2)
 
 # Initialize Matplotlib Figure and Axes
 fig, axes = plt.subplots(2, 2, figsize=(8, 6))
@@ -413,20 +413,11 @@ except:
 
 # Define the data collection function
 def data_collection():
+    stop_event.clear()
     global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, powers, p_actuals, run_time, excel_filename, s2p_filename
     
     """Get user inputs and start data collection process"""
-    # Prompt user for file path to save data to
-    file_path = filedialog.asksaveasfilename(
-        defaultextension=".txt",
-        filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-    )
-    if not file_path:
-        return  # User cancelled
 
-    excel_file_path = file_path.replace(".txt", ".xlsx")
-    plot_file_path = file_path.rsplit('.', 1)[0] + '.png'
-    
     # Create a pop-up window for additional inputs
     input_window = tk.Toplevel(root)
     input_window.title("Save Data Inputs")
@@ -443,12 +434,27 @@ def data_collection():
     comment_entry = ttk.Entry(input_window, textvariable=comment_var)
     comment_entry.grid(row=1, column=1, padx=10, pady=10)
 
-     # Add a button to save the data and close the pop-up
-    save_button = ttk.Button(input_window, text="Save", command=None)
-    save_button.grid(row=2, column=0, columnspan=2, pady=20)
+    
 
-    # Close the pop-up window
-    input_window.destroy()
+      # Function to close the pop-up window and prompt for file path
+    def choose_file_and_close():
+        global file_path, excel_file_path, plot_file_path
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if not file_path:
+            return  # User cancelled, do not close the window
+        excel_file_path = file_path.replace(".txt", ".xlsx")
+        plot_file_path = file_path.rsplit('.', 1)[0] + '.png'
+        # Close the input window
+        input_window.destroy()
+        # You can now use `file_path`, `excel_file_path`, and `plot_file_path` in your program
+
+    # Add a button to save the data and close the pop-up
+    save_button = ttk.Button(input_window, text="CHOOSE FILE SAVE PATH", command=choose_file_and_close)
+    save_button.grid(row=2, column=0, columnspan=2, pady=20)
 
     try:
         # Get user inputs for the measurement
@@ -497,11 +503,14 @@ def data_collection():
 
         if enable_search:
             ############################################################################################################################################################
-            ####                                                   CALIBRATION TO GET BEAT FREQUENCY WITHIN 1 GHz                                                    ###
+            ####                                                 AUTO START FREQUENCY SEARCH TO GET BEAT FREQUENCY WITHIN 1 GHz                                      ###
             ############################################################################################################################################################
             # Loop through until the starting frequency is within the given threshold
-            update_message_feed("RUNNING CALIBRATION LOOP...")
+            update_message_feed("RUNNING AUTOMATIC START FREQUENCY SEARCH LOOP...")
             while current_freq >= 0.5:
+                if stop_event.is_set():
+                    update_message_feed("Data collection stopped by user.")
+                    break
 
                 # Calculate the new wavelength for laser 4
                 laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
@@ -521,10 +530,13 @@ def data_collection():
                 #update_message_feed(f"Current Beat Frequency: {current_freq} GHz")
 
                 if last_beat_freq is not None and current_freq > last_beat_freq:
+                    if stop_event.is_set():
+                        update_message_feed("Data collection stopped by user.")
+                        break
                     if current_freq >= 1:
                         consecutive_increases += 1
                         if consecutive_increases >= max_consecutive_increases:
-                            update_message_feed("Calibration overshot the threshold, restarting calibration...")
+                            update_message_feed("Start frequency search overshot the threshold, restarting...")
                             # Reset calibration variables
                             laser_4_WL = laser_3_WL - 2 # Reset to initial wavelength - 1 nm
                             set_laser_wavelength(ecl_adapter, 4, laser_4_WL)  # Apply the reset wavelength to Laser 4
@@ -594,6 +606,9 @@ def data_collection():
                 last_beat_freq = current_freq
 
                 time.sleep(3)
+            if stop_event.is_set():
+                update_message_feed("Data collection stopped by user.")
+                return
 
             # Once within threshold of 0, update the step to attempt to jump over potential ESA measurement issues
             update_message_feed("Attempting small jump over ESA issues near 0 GHZ...")
@@ -620,6 +635,9 @@ def data_collection():
             update_laser = True
 
             while abs(current_freq - start_freq) > freq_threshold:
+                if stop_event.is_set():
+                    update_message_feed("Data collection stopped by user.")
+                    break
 
                 #Measure beat frequency using wavelength meter and ESA
                 wl_meter_beat_freq = measure_wavelength_beat(wavelength_meter)
@@ -976,7 +994,7 @@ def data_collection():
     except Exception as e:
         update_message_feed(f"Error in data collection: {e}")
         messagebox.showerror("Data Collection Error", str(e))
-        stop_event.set()
+        reset_program()
 
 # Define the function to update plots
 def update_plots():
@@ -1022,6 +1040,52 @@ def on_stop():
         stop_event.set()
         update_message_feed("Data collection will be stopped.")
 
+def reset_program():
+    global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, powers, p_actuals, stop_event, data_ready_event
+
+    # Reset all the lists and variables
+    steps = []
+    beat_freqs = []
+    laser_4_wavelengths = []
+    beat_freq_and_power = []
+    calibrated_rf = []
+    photo_currents = []
+    rf_loss = []
+    powers = []
+    p_actuals = []
+
+    # Clear the message feed
+    message_feed.delete(1.0, tk.END)
+
+    # Reset the stop_event and data_ready_event
+    stop_event.clear()
+    data_ready_event.clear()
+
+    # Clear the data from the plots without removing formatting
+    line1.set_data([], [])
+    markers1.set_data([], [])
+    line2.set_data([], [])
+    markers2.set_data([], [])
+    line3.set_data([], [])
+    markers3.set_data([], [])
+    line4.set_data([], [])
+    markers4.set_data([], [])
+    line5.set_data([], [])
+    markers5.set_data([], [])
+
+    # Rescale the axes to reflect the cleared data
+    for ax in [ax1, ax2, ax3, ax4, ax5]:
+        ax.relim()
+        ax.autoscale_view()
+
+    # Redraw the canvas to update the plots
+    canvas.draw()
+
+    # Restart the plot updating loop
+    root.after(100, update_plots)
+
+    update_message_feed("Program reset and ready to start again.")
+
 
 # Define the function to handle window closing
 def on_closing():
@@ -1031,22 +1095,11 @@ def on_closing():
         sys.exit(0)
 
 def on_cancel():
-    if messagebox.askyesno("Confirm Exit", "Are you sure you want to cancel and exit the program?"):
+    if messagebox.askyesno("Confirm Exit", "Are you sure you want to reset the program?"):
         stop_event.set()  # Ensure any ongoing measurements are stopped
-        try:
-            # Close any open VISA connections here, if necessary
-            ecl_adapter.close()
-            wavelength_meter.close()
-            spectrum_analyzer.close()
-            keithley.close()
-            voa.close()
-            RS_power_sensor.close()
-            print("Connection closed.")
-            sys.exit(0)
-        except:
-            pass  # Handle any exceptions that may occur during closing of resources
-        root.destroy()  # Close the Tkinter window, which will also terminate the program
-        sys.exit(0)
+        time.sleep(2) # Wait for the measurements to stop
+        reset_program()  # Reset the program for a new start
+        
 
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
