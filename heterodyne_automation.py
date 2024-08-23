@@ -7,7 +7,6 @@ import numpy as np
 import openpyxl
 from openpyxl import Workbook
 import threading
-import msvcrt
 import re
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -22,12 +21,13 @@ print("Connected devices:", rm.list_resources())
 
 # Create a VISA adapter for the ECL laser and wavelength meter
 # *** The GPIB should always be the same, so these should not need to be changed ***
-ecl_adapter = rm.open_resource('GPIB0::10::INSTR')  # Update with your actual GPIB address
-wavelength_meter = rm.open_resource('GPIB0::20::INSTR')  # Update with your actual GPIB address
-spectrum_analyzer = rm.open_resource('GPIB0::18::INSTR')  # Update with your actual GPIB address
-keithley = rm.open_resource('GPIB0::24::INSTR')  # Update with your actual GPIB address
-RS_power_sensor = rm.open_resource('RSNRP::0x00a8::100940::INSTR') # Update with your actual VISA address for the RS NRP-Z58 sensor
-voa = rm.open_resource('GPIB0::26::INSTR')  # Update with your actual GPIB address
+
+ecl_adapter_GPIB = 'GPIB0::10::INSTR' # Update with your actual GPIB address
+wavelength_meter_GPIB = 'GPIB0::20::INSTR'  # Update with your actual GPIB address
+spectrum_analyzer_GPIB = 'GPIB0::18::INSTR'  # Update with your actual GPIB address
+keithley_GPIB = 'GPIB0::24::INSTR'  # Update with your actual GPIB address
+RS_power_sensor_GPIB = 'RSNRP::0x00a8::100940::INSTR' # Update with your actual VISA address for the RS NRP-Z58 sensor
+voa_GPIB = 'GPIB0::26::INSTR'  # Update with your actual GPIB address
 
 # Function definitions for various measurements
 def exit_program():
@@ -245,8 +245,8 @@ laser_3_var = tk.DoubleVar(value=1550)
 laser_3_entry = ttk.Entry(input_frame, textvariable=laser_3_var)
 laser_3_entry.grid(row=0, column=1, padx=5, pady=5)
 
-tk.Label(input_frame, text="Starting WL Laser 4 (nm) (Recommend 2nm below L3 if doing auto search):").grid(row=1, column=0, padx=5, pady=5, sticky="e")
-laser_4_var = tk.DoubleVar(value=1550)
+tk.Label(input_frame, text="Starting WL Laser 4 (nm):").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+laser_4_var = tk.DoubleVar(value=1548)
 laser_4_entry = ttk.Entry(input_frame, textvariable=laser_4_var)
 laser_4_entry.grid(row=1, column=1, padx=5, pady=5)
 
@@ -270,51 +270,52 @@ delay_var = tk.DoubleVar(value=3.0)
 delay_entry = ttk.Entry(input_frame, textvariable=delay_var)
 delay_entry.grid(row=5, column=1, padx=5, pady=5)
 
-tk.Label(input_frame, text="Start Frequency Search Threshold (GHz):").grid(row=6, column=0, padx=5, pady=5, sticky="e")
+"""tk.Label(input_frame, text="Start Frequency Search Threshold (GHz):").grid(row=6, column=0, padx=5, pady=5, sticky="e")
 freq_threshold_var = tk.DoubleVar(value=1)
 freq_threshold_entry = ttk.Entry(input_frame, textvariable=freq_threshold_var)
 freq_threshold_entry.grid(row=6, column=1, padx=5, pady=5)
-
+tk.Label(input_frame, text="Note: Values below 0.5 GHz are less likely to work").grid(row=7, column=0, columnspan=2, pady=2)
+"""
 
 # Add the checkbox for starting beat frequency search
 # Add the label and button for s2p file selection
-tk.Label(input_frame, text="Select .s2p File:").grid(row=7, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="RF Link Loss (.s2p):").grid(row=8, column=0, padx=5, pady=5, sticky="e")
 s2p_file_var = tk.StringVar()
 s2p_file_entry = ttk.Entry(input_frame, textvariable=s2p_file_var, width=20)
-s2p_file_entry.grid(row=7, column=1, padx=5, pady=5)
+s2p_file_entry.grid(row=8, column=1, padx=5, pady=5)
 s2p_file_button = ttk.Button(input_frame, text="Browse", command=lambda: select_s2p_file())
-s2p_file_button.grid(row=7, column=2, padx=5, pady=5)
+s2p_file_button.grid(row=8, column=2, padx=5, pady=5)
 
 # Add the label and button for Excel file selection
-tk.Label(input_frame, text="Select .xlsx File:").grid(row=8, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="RF Probe Loss (.xlsx):").grid(row=9, column=0, padx=5, pady=5, sticky="e")
 excel_file_var = tk.StringVar()
 excel_file_entry = ttk.Entry(input_frame, textvariable=excel_file_var, width=20)
-excel_file_entry.grid(row=8, column=1, padx=5, pady=5)
+excel_file_entry.grid(row=9, column=1, padx=5, pady=5)
 excel_file_button = ttk.Button(input_frame, text="Browse", command=lambda: select_excel_file())
-excel_file_button.grid(row=8, column=2, padx=5, pady=5)
+excel_file_button.grid(row=9, column=2, padx=5, pady=5)
 
 
-tk.Label(input_frame, text="Enable Start Beat Frequency Search:").grid(row=9, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="Enable Start Beat Frequency Search:").grid(row=10, column=0, padx=5, pady=5, sticky="e")
 enable_search_var = tk.BooleanVar(value=True)  # Default is True (enabled)
 enable_search_checkbox = ttk.Checkbutton(input_frame, variable=enable_search_var)
-enable_search_checkbox.grid(row=9, column=1, padx=5, pady=5, sticky="w")
+enable_search_checkbox.grid(row=10, column=1, padx=5, pady=5, sticky="w")
 
 # Create control buttons below the inputs
 start_button = ttk.Button(input_frame, text="START", command=lambda: threading.Thread(target=data_collection).start())
-start_button.grid(row=10, column=0, columnspan=2, pady=10)
+start_button.grid(row=11, column=0, columnspan=2, pady=10)
 
 stop_button = ttk.Button(input_frame, text="STOP", command=lambda: on_stop())
-stop_button.grid(row=11, column=0, columnspan=2, pady=10)
+stop_button.grid(row=12, column=0, columnspan=2, pady=10)
+tk.Label(input_frame, text="NOTE: This will only stop data collection during the frequency sweep").grid(row=13, column=0, columnspan=2, pady=2)
 
-save_button = ttk.Button(input_frame, text="SAVE", command=lambda: on_save())
-save_button.grid(row=12, column=0, columnspan=2, pady=10)
 
 # Add a Text widget to display live messages
 message_feed = tk.Text(input_frame, wrap="word", height=10, width=50)
-message_feed.grid(row=13, column=0, columnspan=3, padx=5, pady=5)
+message_feed.grid(row=14, column=0, columnspan=3, padx=5, pady=5)
 
-cancel_button = ttk.Button(input_frame, text="CANCEL/CLOSE", command=lambda: on_cancel())
-cancel_button.grid(row=14, column=0, columnspan=2, pady=10)
+cancel_button = ttk.Button(input_frame, text="CLOSE PROGRAM", command=lambda: on_cancel())
+cancel_button.grid(row=15, column=0, columnspan=2, pady=10)
+tk.Label(input_frame, text="NOTE: This will close the entire program and will not save any data").grid(row=16, column=0, columnspan=2, pady=2)
 
 # Initialize Matplotlib Figure and Axes
 fig, axes = plt.subplots(2, 2, figsize=(8, 6))
@@ -394,14 +395,61 @@ fig.tight_layout()
 
 # Add hover functionality using mplcursors, but only annotate the markers (actual data points)
 mplcursors.cursor(markers1, hover=mplcursors.HoverMode.Transient)
-mplcursors.cursor(markers2, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers3, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers4, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers5, hover=mplcursors.HoverMode.Transient)
 
+# Create VISA adapters with the connected equipment - send error message to message feed in GUI if connection fails
+try:
+    ecl_adapter = rm.open_resource(ecl_adapter_GPIB)  # Update with your actual GPIB address
+    wavelength_meter = rm.open_resource(wavelength_meter_GPIB)  # Update with your actual GPIB address
+    spectrum_analyzer = rm.open_resource(spectrum_analyzer_GPIB)  # Update with your actual GPIB address
+    keithley = rm.open_resource(keithley_GPIB)  # Update with your actual GPIB address
+    keithley.write(":SYSTem:LOCal")
+    RS_power_sensor = rm.open_resource(RS_power_sensor_GPIB) # Update with your actual VISA address for the RS NRP-Z58 sensor
+    voa = rm.open_resource(voa_GPIB)  # Update with your actual GPIB address
+except:
+    update_message_feed("Error connecting to VISA devices. Check GPIB addresses and connections.")
+
 # Define the data collection function
 def data_collection():
     global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, powers, p_actuals, run_time, excel_filename, s2p_filename
+    
+    """Get user inputs and start data collection process"""
+    # Prompt user for file path to save data to
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".txt",
+        filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+    )
+    if not file_path:
+        return  # User cancelled
+
+    excel_file_path = file_path.replace(".txt", ".xlsx")
+    plot_file_path = file_path.rsplit('.', 1)[0] + '.png'
+    
+    # Create a pop-up window for additional inputs
+    input_window = tk.Toplevel(root)
+    input_window.title("Save Data Inputs")
+    input_window.geometry("300x200")
+
+    # Create input fields for device number and comments
+    tk.Label(input_window, text="Device Number:").grid(row=0, column=0, padx=10, pady=10)
+    device_num_var = tk.StringVar()
+    device_num_entry = ttk.Entry(input_window, textvariable=device_num_var)
+    device_num_entry.grid(row=0, column=1, padx=10, pady=10)
+
+    tk.Label(input_window, text="Comments:").grid(row=1, column=0, padx=10, pady=10)
+    comment_var = tk.StringVar()
+    comment_entry = ttk.Entry(input_window, textvariable=comment_var)
+    comment_entry.grid(row=1, column=1, padx=10, pady=10)
+
+     # Add a button to save the data and close the pop-up
+    save_button = ttk.Button(input_window, text="Save", command=None)
+    save_button.grid(row=2, column=0, columnspan=2, pady=20)
+
+    # Close the pop-up window
+    input_window.destroy()
+
     try:
         # Get user inputs for the measurement
         laser_3_WL = laser_3_var.get()
@@ -411,7 +459,7 @@ def data_collection():
         start_freq = start_freq_var.get()
         end_freq = end_freq_var.get()
         enable_search = enable_search_var.get()
-        freq_threshold = freq_threshold_var.get()
+        freq_threshold = 0.5 # freq_threshold_var.get()
         excel_filename = excel_file_var.get()
         s2p_filename = s2p_file_var.get()
 
@@ -519,7 +567,7 @@ def data_collection():
                         exit_program()
 
                 elif esa_beat_freq < 50 and wl_meter_beat_freq < 50:
-                    update_message_feed(f"Beat Frequency (ESA): {round(esa_beat_freq,1)} GHz")
+                    update_message_feed(f"Beat Frequency (ESA): {round(esa_beat_freq,2)} GHz")
 
                     if esa_beat_freq > 3:
                         if last_beat_freq is not None and last_beat_freq < 1:
@@ -585,7 +633,7 @@ def data_collection():
                     continue
 
                 current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
-                update_message_feed(f"Current Beat Frequency: {round(current_freq,1)} GHz")
+                update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
 
                 laser_4_freq = c / (laser_4_WL * 1e-9)  # Calculate current frequency of laser 4
                 laser_4_new_freq = laser_4_freq - ((abs(start_freq - current_freq) * 1e9))/2 # Update the frequency by half the difference between the current and starting frequency
@@ -616,7 +664,7 @@ def data_collection():
                 wl_meter_beat_freq = esa_beat_freq
 
             current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
-            update_message_feed(f"Current Beat Frequency: {round(current_freq,1)} GHz")
+            update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
             enable_search = False # Disable the search after reaching the starting frequency
             
         # Calculate step size
@@ -644,6 +692,7 @@ def data_collection():
         for step in range(num_steps):
             if stop_event.is_set():
                 update_message_feed("Data collection stopped by user.")
+                looping = False
                 time_end = time.time() # End time for the measurement loop
                 run_time = time_end - time_start # Calculate the total run time
 
@@ -736,7 +785,7 @@ def data_collection():
                 update_message_feed(f"Measurement failed after {max_attempts} attempts at step {step + 1}")
                 continue
 
-            update_message_feed(f"Beat Frequency: {round(beat_freq,1)} (GHz)")
+            update_message_feed(f"Beat Frequency: {round(beat_freq,2)} (GHz)")
             update_message_feed(f"Measured Photocurrent: {current} (mA)")
             update_message_feed(f"Raw RF Power: {output_dbm} (dBm)")
 
@@ -772,85 +821,6 @@ def data_collection():
         # Update the plots with the final calibrated data
         data_ready_event.set()
 
-    except Exception as e:
-        update_message_feed(f"Error in data collection: {e}")
-        messagebox.showerror("Data Collection Error", str(e))
-        stop_event.set()
-
-# Define the function to update plots
-def update_plots():
-    if data_ready_event.is_set():
-        # Update line and marker data
-        line1.set_data(steps, beat_freqs)
-        markers1.set_data(steps, beat_freqs)
-        line2.set_data(steps, laser_4_wavelengths)
-        markers2.set_data(steps, laser_4_wavelengths)
-        line3.set_data(beat_freqs, powers)
-        markers3.set_data(beat_freqs, powers)
-        line4.set_data(beat_freqs, photo_currents)
-        markers4.set_data(beat_freqs, photo_currents)
-        if not looping:
-            line5.set_data(beat_freqs, calibrated_rf)
-            markers5.set_data(beat_freqs, calibrated_rf)
-
-        # Adjust axes
-        ax1.relim()
-        ax2.relim()
-        ax3.relim()
-        ax4.relim()
-        ax5.relim()
-
-        ax1.autoscale_view()
-        ax2.autoscale_view()
-        ax3.autoscale_view()
-        ax4.autoscale_view()
-        ax5.autoscale_view()
-
-        canvas.draw()
-
-        # Clear the event
-        data_ready_event.clear()
-
-    # Schedule the next check
-    if not stop_event.is_set():
-        root.after(100, update_plots)
-
-# Define the function to handle the "Stop" button
-def on_stop():
-    if messagebox.askyesno("Confirm Stop", "Are you sure you want to stop the data collection?"):
-        stop_event.set()
-        update_message_feed("Data collection will be stopped.")
-
-# Define the function to handle the "Save" button with a pop-up input window
-def on_save():
-    # Prompt user for file path
-    file_path = filedialog.asksaveasfilename(
-        defaultextension=".txt",
-        filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-    )
-    if not file_path:
-        return  # User cancelled
-
-    excel_file_path = file_path.replace(".txt", ".xlsx")
-    plot_file_path = file_path.rsplit('.', 1)[0] + '.png'
-    
-    # Create a pop-up window for additional inputs
-    input_window = tk.Toplevel(root)
-    input_window.title("Save Data Inputs")
-    input_window.geometry("300x200")
-
-    # Create input fields for device number and comments
-    tk.Label(input_window, text="Device Number:").grid(row=0, column=0, padx=10, pady=10)
-    device_num_var = tk.StringVar()
-    device_num_entry = ttk.Entry(input_window, textvariable=device_num_var)
-    device_num_entry.grid(row=0, column=1, padx=10, pady=10)
-
-    tk.Label(input_window, text="Comments:").grid(row=1, column=0, padx=10, pady=10)
-    comment_var = tk.StringVar()
-    comment_entry = ttk.Entry(input_window, textvariable=comment_var)
-    comment_entry.grid(row=1, column=1, padx=10, pady=10)
-
-    def save_data():
         device_num = device_num_var.get().strip()
         user_comment = comment_var.get().strip().upper()
         keithley_voltage = keithley.query(":SOUR:VOLT:LEV:IMM:AMPL?").strip()  # Get the keithley voltage from the keithley
@@ -927,8 +897,8 @@ def on_save():
             f.write("COMMENTS: " + user_comment + "\n")
             f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
             f.write("RUN TIME: " + str(f"{run_time:.2f}") + " s" + "\n"),
-            f.write("Excel Loss File: " + str(excel_filename if 'excel_filename' in globals() else 'None') + "\n")
-            f.write("S2P Loss File: " + str(s2p_filename if 's2p_filename' in globals() else 'None') + "\n")
+            f.write("RF Link Loss File (.xlsx): " + str(excel_filename if 'excel_filename' in globals() else 'None') + "\n")
+            f.write("RF Probe Loss File (.s2p): " + str(s2p_filename if 's2p_filename' in globals() else 'None') + "\n")
             f.write("INITIAL PHOTOCURRENT: " + str(photo_currents[0]) + " (mA)" + "\n")
             f.write("STARTING WAVELENGTH FOR LASER 3: " + str(laser_3_WL) + " (nm) :" + " STARTING WAVELENGTH FOR LASER 4: " + str(f"{laser_4_wavelengths[0]:.3f}") + " (nm) :" + " DELAY: " + str(delay_var.get()) + " (s) " + "\n")
             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
@@ -1003,18 +973,62 @@ def on_save():
         wb.save(excel_file_path)
         update_message_feed(f"Excel data saved to {excel_file_path}")
 
-        # Close the pop-up window
-        input_window.destroy()
+    except Exception as e:
+        update_message_feed(f"Error in data collection: {e}")
+        messagebox.showerror("Data Collection Error", str(e))
+        stop_event.set()
 
-    # Add a button to save the data and close the pop-up
-    save_button = ttk.Button(input_window, text="Save", command=save_data)
-    save_button.grid(row=2, column=0, columnspan=2, pady=20)
+# Define the function to update plots
+def update_plots():
+    if data_ready_event.is_set():
+        # Update line and marker data
+        line1.set_data(steps, beat_freqs)
+        markers1.set_data(steps, beat_freqs)
+        line2.set_data(steps, laser_4_wavelengths)
+        markers2.set_data(steps, laser_4_wavelengths)
+        line3.set_data(beat_freqs, powers)
+        markers3.set_data(beat_freqs, powers)
+        line4.set_data(beat_freqs, photo_currents)
+        markers4.set_data(beat_freqs, photo_currents)
+        if not looping:
+            line5.set_data(beat_freqs, calibrated_rf)
+            markers5.set_data(beat_freqs, calibrated_rf)
+
+        # Adjust axes
+        ax1.relim()
+        ax2.relim()
+        ax3.relim()
+        ax4.relim()
+        ax5.relim()
+
+        ax1.autoscale_view()
+        ax2.autoscale_view()
+        ax3.autoscale_view()
+        ax4.autoscale_view()
+        ax5.autoscale_view()
+
+        canvas.draw()
+
+        # Clear the event
+        data_ready_event.clear()
+
+    # Schedule the next check
+    if not stop_event.is_set():
+        root.after(100, update_plots)
+
+# Define the function to handle the "Stop" button
+def on_stop():
+    if messagebox.askyesno("Confirm Stop", "Are you sure you want to stop the data collection?"):
+        stop_event.set()
+        update_message_feed("Data collection will be stopped.")
+
 
 # Define the function to handle window closing
 def on_closing():
     if messagebox.askokcancel("Quit", "Do you want to quit?"):
         stop_event.set()
         root.destroy()
+        sys.exit(0)
 
 def on_cancel():
     if messagebox.askyesno("Confirm Exit", "Are you sure you want to cancel and exit the program?"):
@@ -1032,6 +1046,7 @@ def on_cancel():
         except:
             pass  # Handle any exceptions that may occur during closing of resources
         root.destroy()  # Close the Tkinter window, which will also terminate the program
+        sys.exit(0)
 
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
