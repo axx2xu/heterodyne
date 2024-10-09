@@ -59,7 +59,7 @@ def measure_peak_frequency(spectrum_analyzer):
         peak_freq = min(peak_freq_1, peak_freq_2, peak_freq_3)
         return float(peak_freq) / 1e9  # Convert Hz to GHz
     except Exception as e:
-        update_message_feed("Error measuring peak frequency with spectrum analyzer:", e)
+        update_message_feed(f"Error measuring peak frequency with spectrum analyzer: {e}")
         return None
 
 def measure_wavelength_beat(wavelength_meter):
@@ -72,7 +72,7 @@ def measure_wavelength_beat(wavelength_meter):
         if len(freqs) == 2:
             return abs(freqs[0] - freqs[1]) / 1e9  # Calculate the difference in GHz
     except Exception as e:
-        update_message_feed("Error measuring beat frequency with wavelength meter:", e)
+        update_message_feed(f"Error measuring beat frequency with wavelength meter: {e}")
         return None
 
 def set_laser_wavelength(ecl_adapter, channel, wavelength):
@@ -198,12 +198,12 @@ def calculate_calibrated_rf(powers, beat_freqs_pow, s2p_filename=None, excel_fil
             interpolated_loss = np.array(interpolated_loss)
 
             # Update the calibrated_rf calculation to include the new interpolated loss values from .s2p file
-            rf_loss += np.abs(interpolated_loss)
-            rf_probe_loss += np.abs(interpolated_loss)
+            rf_loss += np.abs(interpolated_loss.real)
+            rf_probe_loss += np.abs(interpolated_loss.real)
             calibrated_rf += np.abs(interpolated_loss.real)
             calibrated_rf = np.round(calibrated_rf, 2)  # Round the data
         except Exception as e:
-            update_message_feed("No network analyzer file found or error in processing:", e)
+            update_message_feed(f"No network analyzer file found or error in processing: {e}")
 
     # Apply calibration from Excel file
     if excel_filename:
@@ -221,7 +221,7 @@ def calculate_calibrated_rf(powers, beat_freqs_pow, s2p_filename=None, excel_fil
             calibrated_rf += np.abs(interpolated_probe_loss)
             calibrated_rf = np.round(calibrated_rf, 2)  # Round the data
         except Exception as e:
-            update_message_feed("No excel file found or error in processing:", e)
+            update_message_feed(f"No excel file found or error in processing: {e}")
 
     return calibrated_rf, rf_loss, rf_probe_loss, rf_link_loss
 
@@ -429,7 +429,8 @@ def data_collection():
     data_ready_event.clear()
 
     global steps, beat_freqs, laser_4_wavelengths, beat_freq_and_power, calibrated_rf, photo_currents, rf_loss, rf_probe_loss, rf_link_loss
-    global powers, p_actuals, sweep_run_time, total_run_time, excel_filename, s2p_filename
+    global powers, p_actuals, start_time, start_time_sweep, sweep_run_time, total_run_time, excel_filename, s2p_filename
+
     
     """Get user inputs and start data collection process"""
 
@@ -451,7 +452,7 @@ def data_collection():
 
       # Function to close the pop-up window and prompt for file path
     def choose_file_and_close():
-        global file_path, excel_file_path, plot_file_path
+        global file_path, excel_file_path, plot_file_path, file_path_selected
 
         file_path = filedialog.asksaveasfilename(
             defaultextension=".txt",
@@ -461,6 +462,8 @@ def data_collection():
             return  # User cancelled, do not close the window
         excel_file_path = file_path.replace(".txt", ".xlsx")
         plot_file_path = file_path.rsplit('.', 1)[0] + '.png'
+
+
         # Close the input window
         input_window.destroy()
         # You can now use `file_path`, `excel_file_path`, and `plot_file_path` in your program
@@ -471,7 +474,7 @@ def data_collection():
 
     try:
         open_instruments()
-        time.sleep(1)
+        time.sleep(5)
 
         start_time = time.time()
 
@@ -817,7 +820,7 @@ def data_collection():
                     beat_freq_and_power.append((beat_freq, output_dbm, current, p_actual))  # Append the data to the list
                     success = True  # Measurement succeeded
                 except ValueError as e:
-                    update_message_feed(f"Error processing measurement at step {step + 1}, attempt {attempts + 1}: {e}")
+                    update_message_feed(f"Error processing measurement at step {step + 1}, attempt {attempts + 1}:")
                     attempts += 1
                     time.sleep(1)  # Wait a bit before retrying
 
@@ -933,8 +936,8 @@ def data_collection():
             f.write("DEVICE NUMBER: " + str(device_num) + "\n")
             f.write("COMMENTS: " + user_comment + "\n")
             f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
-            f.write("FREQUENCY SWEEP RUN TIME: " + str(f"{sweep_run_time:.2f}") + " s" + "\n"),
-            f.write("TOTAL RUN TIME: " + str(f"{total_run_time:.2f}") + " s" + "\n"),
+            f.write("FREQUENCY SWEEP RUN TIME: " + str(f"{sweep_run_time:.2f}") + " s" + "\n")
+            f.write("TOTAL RUN TIME: " + str(f"{total_run_time:.2f}") + " s" + "\n")
             f.write("RF Link Loss File (.xlsx): " + str(excel_filename if 'excel_filename' in globals() else 'None') + "\n")
             f.write("RF Probe Loss File (.s2p): " + str(s2p_filename if 's2p_filename' in globals() else 'None') + "\n")
             f.write("INITIAL PHOTOCURRENT: " + str(photo_currents[0]) + " (mA)" + "\n")
@@ -942,9 +945,9 @@ def data_collection():
             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
             f.write("\n")
-            f.write("F_BEAT(GHz)\tPHOTOCURRENT (mA)\tRaw RF POW (dBm)\tTotal RF Loss (dB)\t\tProbe RF Loss (dB)\t\tLink RF Loss (dB)\t\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
+            f.write("F_BEAT(GHz)\tI_PD (mA)\tRaw RF POW (dBm)\tTotal RF Loss (dB)\tProbe RF Loss (dB)\tLink RF Loss (dB)\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
             for i in range(len(steps)):
-                f.write(f"{beat_freqs[i]:<10.2f}\t{float(photo_currents[i]):<10.4e}\t\t{powers[i]:<10.2f}\t\t{rf_loss[i]:<10.2f}\t\t{rf_probe_loss[i]:<10.2f}\t\t{rf_link_loss[i]:<10.2f}\t\t{calibrated_rf[i]:<10.2f}\t\t{p_actuals[i]:<10.3f}\n")
+                f.write(f"{beat_freqs[i]:<10.2f}\t{photo_currents[i]:<10.4e}\t\t{powers[i]:<10.2f}\t\t{rf_loss[i]:<10.2f}\t\t{rf_probe_loss[i]:<10.2f}\t\t{rf_link_loss[i]:<10.2f}\t\t{calibrated_rf[i]:<10.2f}\t\t{p_actuals[i]:<10.3f}\n")
 
         # Save the plot as an image
         
@@ -973,13 +976,13 @@ def data_collection():
         ws.append([])  # Add an empty row for spacing
 
         # Write the table header
-        ws.append(["F_BEAT (GHz)", "PHOTOCURRENT (mA)", "Raw RF POW (dBm)", "Total RF Loss (dB)", "RF Probe Loss (dB)", "RF Link Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
+        ws.append(["F_BEAT (GHz)", "I_PD (mA)", "Raw RF POW (dBm)", "Total RF Loss (dB)", "RF Probe Loss (dB)", "RF Link Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
 
         # Write the data rows
         for i in range(len(steps)):
             ws.append([
                 f"{beat_freqs[i]:.2f}",
-                f"{float(photo_currents[i]):.4e}",
+                f"{photo_currents[i]}",
                 f"{powers[i]:.2f}",
                 f"{rf_loss[i]:.2f}",
                 f"{rf_probe_loss[i]:.2f}",
@@ -1016,7 +1019,6 @@ def data_collection():
 
     except Exception as e:
         update_message_feed(f"Error in data collection: {e}")
-        messagebox.showerror("Data Collection Error", str(e))
         reset_program()
 
 # Define the function to update plots
