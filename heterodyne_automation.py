@@ -14,6 +14,7 @@ import mplcursors
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
+
 # Initialize the VISA resource manager
 rm = pyvisa.ResourceManager()
 
@@ -387,6 +388,7 @@ ax4.set_title('Measured Photocurrent vs Beat Frequency')
 line4, = ax4.plot([], [], linestyle='-', color=color4)  # Line without markers
 markers4, = ax4.plot([], [], 'o', color=color4)  # Markers only
 ax4.tick_params(axis='y', labelcolor=color4)
+ax4.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{x:.3f}'.rstrip('0').rstrip('.')))
 ax4.grid(True)
 
 # Setup fourth subplot (ax5)
@@ -926,6 +928,20 @@ def data_collection():
         ax5.set_xlabel('Beat Frequency (GHz)', fontdict=label_font)
         ax5.set_ylabel('Calibrated RF Power (dBm)', fontdict=label_font)
 
+        # Manually set y-ticks in 3 dBm intervals (for bandwith, raw)
+        min_power = min(powers)
+        max_power = max(powers)
+        yticks = np.arange(np.floor(min_power / 3) * 3, np.ceil(max_power / 3) * 3 + 3, 3)  # Calculate ticks from min to max
+        ax3.set_yticks(yticks)  # Set y-axis ticks
+        ax3.set_ylim(min(yticks), max(yticks))  # Adjust y-axis limits to show the ticks
+        
+        # Manually set y-ticks in 3 dBm intervals (for bandwith, calibrated)
+        min_calibrated_rf = min(calibrated_rf)
+        max_calibrated_rf = max(calibrated_rf)
+        yticks = np.arange(np.floor(min_calibrated_rf / 3) * 3, np.ceil(max_calibrated_rf / 3) * 3 + 3, 3)  # Calculate ticks from min to max
+        ax5.set_yticks(yticks)  # Set y-axis ticks
+        ax5.set_ylim(min(yticks), max(yticks))  # Adjust y-axis limits to show the ticks
+        
         # Adjust layout
         fig.tight_layout(rect=[0, 0, 1, 0.85])
         canvas.draw()
