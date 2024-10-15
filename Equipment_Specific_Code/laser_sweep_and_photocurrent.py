@@ -102,7 +102,7 @@ delay_var = tk.DoubleVar(value=3.0)
 delay_entry = ttk.Entry(input_frame, textvariable=delay_var)
 delay_entry.grid(row=4, column=1, padx=5, pady=5)
 
-tk.Label(input_frame, text="Enable Automatic Start Beat Frequency Search:").grid(row=5, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="Enable Automatic Start Wavelength Search:").grid(row=5, column=0, padx=5, pady=5, sticky="e")
 enable_search_var = tk.BooleanVar(value=True)  # Default is True (enabled)
 enable_search_checkbox = ttk.Checkbutton(input_frame, variable=enable_search_var)
 enable_search_checkbox.grid(row=5, column=1, padx=5, pady=5, sticky="w")
