@@ -88,7 +88,7 @@ laser_val_entry = ttk.Entry(input_frame, textvariable=laser_val_var)
 laser_val_entry.grid(row=1, column=1, padx=5, pady=5)
 
 tk.Label(input_frame, text="Ending Laser WL (nm):").grid(row=2, column=0, padx=5, pady=5, sticky="e")
-laser_end_var = tk.DoubleVar(value=0)
+laser_end_var = tk.DoubleVar(value=1550)
 laser_end_entry = ttk.Entry(input_frame, textvariable=laser_end_var)
 laser_end_entry.grid(row=2, column=1, padx=5, pady=5)
 
@@ -122,7 +122,7 @@ message_feed.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
 
 cancel_button = ttk.Button(input_frame, text="RESET", command=lambda: on_cancel())
 cancel_button.grid(row=9, column=0, columnspan=2, pady=10)
-tk.Label(input_frame, text="NOTE: This will reset the program and no data will be saved").grid(row=9, column=0, columnspan=2, pady=2)
+tk.Label(input_frame, text="NOTE: This will reset the program and no data will be saved").grid(row=10, column=0, columnspan=2, pady=2)
 
 # Initialize Matplotlib Figure and Axes
 fig = Figure(figsize=(8, 6))
