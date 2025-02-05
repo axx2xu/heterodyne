@@ -394,7 +394,6 @@ fig.tight_layout()
 
 # Add hover functionality using mplcursors, but only annotate the markers (actual data points)
 mplcursors.cursor(markers1, hover=mplcursors.HoverMode.Transient)
-mplcursors.cursor(markers2, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers3, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers4, hover=mplcursors.HoverMode.Transient)
 mplcursors.cursor(markers5, hover=mplcursors.HoverMode.Transient)

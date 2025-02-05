@@ -23,6 +23,9 @@ print("Connected devices:", rm.list_resources())
 ecl_adapter_GPIB = 'GPIB0::10::INSTR' # Update with your actual GPIB address
 wavelength_meter_GPIB = 'GPIB0::20::INSTR'  # Update with your actual GPIB address
 keithley_GPIB = 'GPIB0::24::INSTR'  # Update with your actual GPIB address
+optical_power_GPIB = 'GPIB0::25::INSTR'  # Update with your actual GPIB address
+
+#power_reading = instrument.query(':READ2:CHAN1:POWer?') optical power meter reading
 
 # Function definitions for various measurements
 def exit_program():

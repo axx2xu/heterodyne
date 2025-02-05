@@ -2,7 +2,7 @@
 
 **Thomas Keyes**  
 *Computer Engineering, University of Virginia*
-
+*axx2xu@virginia.edu*
 ---
 
 ## Program Highlights
@@ -63,6 +63,7 @@
 
 ## User Inputs in Program
 
+- After pressing the “START” button, a new window will pop up, prompting the user to enter the device number, comments, and to select the file save path. The program will then begin.
 - Starting wavelength for laser 3 and laser 4.
 - Start and end beat frequency.
 - Acceptable threshold within start frequency.
@@ -108,27 +109,21 @@
 ### File Pathing and GPIB Addresses
 
 - **Calibrated RF Power Calculation:**
-  - Update file paths within the code.
-  - s2p file for RF probe loss.
-  - Excel file for RF link loss (no headers, frequencies in column 1, link loss in dB in column 2).
+  - Select file paths in the GUI for:
+    - s2p file for RF probe loss.
+    - Excel file for RF link loss (no headers, frequencies in column 1, link loss in dB in column 2).
 
-- **GPIB Addresses:**
-  - Check and label correctly at the beginning of the code.
-  - View connected devices to verify addresses.
-
-### Python Library, Driver, and Software Installation
-
-- `pip install pymeasure pyvisa matplotlib scikit-rf numpy pandas openpyxl scipy`
+### Required Installations
 - Install NRP Toolkit.
 - Install VISA Library Passport for NRP.
 - Install NI Max.
 - Install R&S Power Viewer.
 
-*Installation links can be found in the “requirements” file in the GitHub repository.*
+*Installation links can be found in the “drivers” file in the GitHub repository.*
 
 ---
 
-## How to Get To and Run Program
+## How to Get To and Run Program On Offline Computer
 
 1. Open Visual Studio Code.
 2. Find the directory named “Thomas”.
@@ -140,11 +135,43 @@
 8. After closing the plot window, choose to output the data to a text file and provide the required details.
 
 ---
+## Opening the Program (Ideal Method)
+- The designed and ideal way to run the program is to simply run the distributed .exe file named “heterodyne_automation.exe”
+- If this runs successfully, the GUI should pop up as shown in the figure
+- If this does not work, follow the steps usinga virtual environment to run the program through python
+
+## Setting Up a Virtual Environment to Run the Program
+
+1. Ensure that Python is installed on your computer.
+2. Download the “heterodyne_automation.py” and “requirements.txt” files from the GitHub repository into a new project directory.
+3. Open a terminal and navigate to the project directory.
+4. Create a virtual environment:
+   ```sh
+   python -m venv venv
+   ```
+5. Activate the virtual environment:
+   - On Windows:
+     ```sh
+     .\venv\Scripts\activate
+     ```
+   - On macOS/Linux:
+     ```sh
+     source venv/bin/activate
+     ```
+6. Install the required packages:
+   ```sh
+   pip install -r requirements.txt
+   ```
+7. Run the program:
+   ```sh
+   python heterodyne_automation.py
+   ```
+---
 
 ## Using the Program
 
 ### Steps of Use
-
+#### Pre-Program Setup
 1. Ensure correct setup (cables, Bias-T, chip, etc.).
 2. Turn on all equipment.
 3. Zero R&S Power Meter using Power Viewer software.
@@ -155,9 +182,36 @@
 8. Set Keithley voltage and current compliance, enable (ensure correct bias).
 9. Turn on EDFA pump (lasers must be enabled first).
 10. Enable the VOA, read the photocurrent on Keithley and adjust α until reaching the desired photocurrent.
-11. Run the program and enter user inputs into the terminal.
 
-*The program can be cancelled at any time using (ctrl + c); no data will be saved.*
+#### Setting Up User Inputs
+1. Starting WL for Laser 3
+- This will be a stable wavelength and will not be changed by the program; it should be set to your desired wavelength.
+2. Starting WL for laser 4
+- This output will be altered by the program to drive the beat frequency. The initial setting should be 2-3nm below that of Laser 3 unless you have already calibrated your starting wavelengths.
+3. If you have already manually calibrated the starting beat frequency, enter the exact wavelengths from the ECL into the inputs of the program, and de-select the “automatic initial beat frequency search” check.
+4. Starting and ending beat frequency set the range of beat frequencies that the program will parse and take measurements of.
+5. Number of steps
+- This will determine the number of steps the program will take between the start and end beat frequency.
+6. Delay between steps
+- This will set the delay the program takes between updating the lasers and taking the next measurements. I recommend at least a 3 second delay to ensure accurate measurements.
+7. RF link loss file
+- If applicable include existing RF link loss file, it must have .s2p file formatting.
+8. RF probe loss file
+- If applicable, include existing RF probe loss file, it must have .xlsx file formatting.
+9. Press the “START” button
+- A new window will pop up prompting the user to enter the device number, user comments, and save file path
+10. Device number
+- Enter the device number or another identification parameter (e.g., serial number).
+11. Comments
+- Enter any additional user comments about the device or trial run
+12. Choose file save path
+- Search the file directory for the desired save location, then select the save button.
+
+#### While the Program is Running
+- Once the measurement loop begins, current measurements will appear in the output window, such as photocurrent, RF power, etc.
+- To stop the loop during the measurement, press the “STOP” button. Any measurements that have been taken will be automatically saved.
+- To reset the program, press the “RESET” button. No data will be saved and the program should restart. If the program is not running correctly, it may need to be closed and re-opened.
+- The plots and data will automatically save to the path file selected during the initial program setup. If you would like to save the plots again, press the save button to and select the desired file path.
 
 ---
 

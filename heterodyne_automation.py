@@ -256,25 +256,30 @@ laser_4_var = tk.DoubleVar(value=1548)
 laser_4_entry = ttk.Entry(input_frame, textvariable=laser_4_var)
 laser_4_entry.grid(row=1, column=1, padx=5, pady=5)
 
-tk.Label(input_frame, text="Starting Beat Frequency (GHz):").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="                    Enable Automatic Initial Beat Frequency Search:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+enable_search_var = tk.BooleanVar(value=True)  # Default is True (enabled)
+enable_search_checkbox = ttk.Checkbutton(input_frame, variable=enable_search_var)
+enable_search_checkbox.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+
+tk.Label(input_frame, text="Starting Beat Frequency (GHz):").grid(row=3, column=0, padx=5, pady=5, sticky="e")
 start_freq_var = tk.DoubleVar(value=0)
 start_freq_entry = ttk.Entry(input_frame, textvariable=start_freq_var)
-start_freq_entry.grid(row=2, column=1, padx=5, pady=5)
+start_freq_entry.grid(row=3, column=1, padx=5, pady=5)
 
-tk.Label(input_frame, text="Ending Beat Frequency (GHz):").grid(row=3, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="Ending Beat Frequency (GHz):").grid(row=4, column=0, padx=5, pady=5, sticky="e")
 end_freq_var = tk.DoubleVar(value=0)
 end_freq_entry = ttk.Entry(input_frame, textvariable=end_freq_var)
-end_freq_entry.grid(row=3, column=1, padx=5, pady=5)
+end_freq_entry.grid(row=4, column=1, padx=5, pady=5)
 
-tk.Label(input_frame, text="Number of Steps:").grid(row=4, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="Number of Steps:").grid(row=5, column=0, padx=5, pady=5, sticky="e")
 num_steps_var = tk.IntVar(value=0)
 num_steps_entry = ttk.Entry(input_frame, textvariable=num_steps_var)
-num_steps_entry.grid(row=4, column=1, padx=5, pady=5)
+num_steps_entry.grid(row=5, column=1, padx=5, pady=5)
 
-tk.Label(input_frame, text="Delay Between Steps (s):").grid(row=5, column=0, padx=5, pady=5, sticky="e")
+tk.Label(input_frame, text="Delay Between Steps (s):").grid(row=6, column=0, padx=5, pady=5, sticky="e")
 delay_var = tk.DoubleVar(value=3.0)
 delay_entry = ttk.Entry(input_frame, textvariable=delay_var)
-delay_entry.grid(row=5, column=1, padx=5, pady=5)
+delay_entry.grid(row=6, column=1, padx=5, pady=5)
 
 """tk.Label(input_frame, text="Start Frequency Search Threshold (GHz):").grid(row=6, column=0, padx=5, pady=5, sticky="e")
 freq_threshold_var = tk.DoubleVar(value=1)
@@ -301,10 +306,7 @@ excel_file_button = ttk.Button(input_frame, text="Browse", command=lambda: selec
 excel_file_button.grid(row=9, column=2, padx=5, pady=5)
 
 
-tk.Label(input_frame, text="Enable Automatic Start Beat Frequency Search:").grid(row=10, column=0, padx=5, pady=5, sticky="e")
-enable_search_var = tk.BooleanVar(value=True)  # Default is True (enabled)
-enable_search_checkbox = ttk.Checkbutton(input_frame, variable=enable_search_var)
-enable_search_checkbox.grid(row=10, column=1, padx=5, pady=5, sticky="w")
+
 
 # Create control buttons below the inputs
 start_button = ttk.Button(input_frame, text="START", command=lambda: threading.Thread(target=data_collection).start())
