@@ -2,3 +2,6 @@ dist/heterodyne_automation/*
 build/*
 heterodyne_automation.spec
 ~$Python Heterodyne Measurement Automation Slides.pptx
+Test_Outputs/*
+measurement_data/*
+ComPD_tests
