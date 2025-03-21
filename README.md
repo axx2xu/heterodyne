@@ -264,7 +264,7 @@
 ---
 
 # Contact
-For instructions with video demonstration, access the "Python Heterodyne Automation Slides" powerpoint file. To view the slides without video demonstration, access the "Python Heterodyne Automation Slides" pdf file.
-
+For instructions, access the "Python Heterodyne Automation Slides" powerpoint file.
+To recompile the source code into an executable, you will need PyInstaller installed, and then run the command 'pyinstaller --onefile --windowed --hidden-import=openpyxl.cell._writer --hidden-import=pyvisa_py heterodyne_automation.py'
 If the program is not working correctly, or if you have any questions, feel free to reach out to me by email:
 axx2xu@virginia.edu
