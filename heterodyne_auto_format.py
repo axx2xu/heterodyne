@@ -313,11 +313,11 @@ class MeasurementApp:
         """
         try:
             self.wavelength_meter.write(":INIT:IMM")
-            time.sleep(1.5)  # Increased wait time for measurement completion
-            freq_data = self.wavelength_meter.query(":CALC3:DATA? FREQuency").strip().split(',')
-            freqs = [float(freq) for freq in freq_data]
-            if len(freqs) == 2:
-                return abs(freqs[0] - freqs[1]) / 1e9  # Difference in GHz
+            time.sleep(1.5)
+            data = self.wavelength_meter.query(":CALC3:DATA? FREQuency").strip().split(',')
+            freqs = [float(f) for f in data]
+            beat_node = min(freqs)  # assuming the reference delta is 0
+            return abs(beat_node / 1e9)  # return beat node in GHz
         except Exception as e:
             self.update_message_feed(f"Error measuring beat frequency with wavelength meter: {e}")
             return None
@@ -509,7 +509,24 @@ class MeasurementApp:
             # Initialize frequencies: set reference frequency to laser 3
             c = 299792458  # Speed of light in m/s
             laser_3_freq = c / (laser_3_WL * 1e-9)
-            self.wavelength_meter.write(f":CALC3:DELTA:REF:FREQ {laser_3_freq}")
+            self.wavelength_meter.write(":CALCulate3:PRESet")
+            time.sleep(1)
+            self.wavelength_meter.write("*OPC?")
+            if self.wavelength_meter.read().strip() == "1":
+                print("CALCulate3 states cleared.")
+            else:
+                print("Warning: Operation did not complete as expected.")
+
+            self.wavelength_meter.write(":CALCulate3:DELTa:REFerence:WAVelength MIN")
+            time.sleep(1)
+
+            self.wavelength_meter.write(":CALCulate3:DELTa:WAVelength ON")
+            time.sleep(1)
+            self.wavelength_meter.write("*OPC?")
+            if self.wavelength_meter.read().strip() == "1":
+                print("Delta wavelength mode successfully turned ON.")
+            else:
+                print("Delta wavelength mode command did not complete as expected.")
             time.sleep(1)
 
             # Additional variables to track consecutive increases
@@ -571,7 +588,7 @@ class MeasurementApp:
                         self.update_message_feed("Data collection stopped by user.")
                         return
 
-                    if wl_meter_beat_freq >= 50:
+                    if wl_meter_beat_freq >= 50 and wl_meter_beat_freq < 1000:
                         self.update_message_feed(f"Beat Frequency (Wavelength Meter): {wl_meter_beat_freq} GHz")
                         laser_4_new_freq = laser_4_freq - (wl_meter_beat_freq * 0.67 * 1e9)
                         laser_4_WL = (c / laser_4_new_freq) * 1e9

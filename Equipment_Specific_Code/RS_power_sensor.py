@@ -36,7 +36,7 @@ def main():
         #print("Resetting the instrument...")
         #sensor.write('*RST')
 
-        # Calibrate the sensor (uncomment if needed)
+        #Calibrate the sensor (uncomment if needed)
         # print("Calibrating the sensor...")
         # sensor.write('CAL:ZERO:AUTO ONCE')
         # time.sleep(10) # wait 10 seconds
