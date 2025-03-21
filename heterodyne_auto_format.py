@@ -301,6 +301,8 @@ class MeasurementApp:
             time.sleep(0.1)
             peak_freq_3 = self.spectrum_analyzer.query('MKF?')
             peak_freq = min(peak_freq_1, peak_freq_2, peak_freq_3)
+
+            self.spectrum_analyzer.write(":SENS:FREQ:SPAN 50GHz") # reset span to full span for next measurement
             return float(peak_freq) / 1e9  # Convert Hz to GHz
         except Exception as e:
             self.update_message_feed(f"Error measuring peak frequency: {e}")
@@ -538,13 +540,13 @@ class MeasurementApp:
             esa_beat_freq = self.measure_peak_frequency()
             if wl_meter_beat_freq is None:
                 wl_meter_beat_freq = esa_beat_freq
-            current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+            current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
             last_beat_freq = None
 
             # --- AUTO START FREQUENCY SEARCH LOOP ---
             if enable_search:
                 self.update_message_feed("RUNNING AUTOMATIC START FREQUENCY SEARCH LOOP...")
-                while current_freq >= 0.5:
+                while current_freq >= 1:
                     if self.stop_event.is_set():
                         self.update_message_feed("Data collection stopped by user.")
                         return
@@ -554,9 +556,14 @@ class MeasurementApp:
                     if wl_meter_beat_freq is None:
                         wl_meter_beat_freq = esa_beat_freq
                     if wl_meter_beat_freq is None or esa_beat_freq is None:
+                        self.update_message_feed("Issue reading from WLM and ESA, updating small jump in laser...")
+                        laser_4_freq = c / (laser_4_WL * 1e-9)
+                        laser_4_new_freq = laser_4_freq - (0.2 * 1e9)
+                        laser_4_WL = (c / laser_4_new_freq) * 1e9
+                        self.set_laser_wavelength(4, laser_4_WL)
+                        time.sleep(3)
                         continue
-                    current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
-
+                    current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
                     if last_beat_freq is not None and current_freq > last_beat_freq:
                         if self.stop_event.is_set():
                             self.update_message_feed("Data collection stopped by user.")
@@ -577,7 +584,7 @@ class MeasurementApp:
                                     wl_meter_beat_freq = esa_beat_freq
                                 if wl_meter_beat_freq is None or esa_beat_freq is None:
                                     continue
-                                current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                                current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
                                 continue
                         elif current_freq < 1:
                             break  # Near 0 beat frequency
@@ -597,7 +604,7 @@ class MeasurementApp:
                         else:
                             self.update_message_feed(f"New wavelength out of bounds: {laser_4_WL:.3f} nm")
                             return
-                    elif esa_beat_freq < 50 and wl_meter_beat_freq < 50:
+                    elif esa_beat_freq < 50 and (wl_meter_beat_freq < 50 or wl_meter_beat_freq > 10000):
                         self.update_message_feed(f"Beat Frequency (ESA): {round(esa_beat_freq,2)} GHz")
                         if esa_beat_freq > 3:
                             if last_beat_freq is not None and last_beat_freq < 1:
@@ -621,7 +628,7 @@ class MeasurementApp:
                 # After loop, attempt a small jump to overcome ESA measurement issues near 0 GHz
                 self.update_message_feed("Attempting small jump over ESA issues near 0 GHz...")
                 laser_4_freq = c / (laser_4_WL * 1e-9)
-                laser_4_new_freq = laser_4_freq - (0.8 * 1e9)
+                laser_4_new_freq = laser_4_freq - (1 * 1e9)
                 laser_4_WL = (c / laser_4_new_freq) * 1e9
                 self.set_laser_wavelength(4, laser_4_WL)
                 time.sleep(3)
@@ -629,7 +636,7 @@ class MeasurementApp:
                 esa_beat_freq = self.measure_peak_frequency()
                 if wl_meter_beat_freq is None:
                     wl_meter_beat_freq = esa_beat_freq
-                current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
                 self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
 
                 # Instead of a single if, use a while loop for the second jump if current_freq > 2
@@ -646,7 +653,7 @@ class MeasurementApp:
                     esa_beat_freq = self.measure_peak_frequency()
                     if wl_meter_beat_freq is None:
                         wl_meter_beat_freq = esa_beat_freq
-                    current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                    current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
                     self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
                     attempt += 1
 
@@ -673,7 +680,7 @@ class MeasurementApp:
                         if wl_meter_beat_freq is None or esa_beat_freq is None:
                             continue
 
-                        current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                        current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
                         self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
 
                         # Calculate the current frequency of laser 4 and update it by half the difference
@@ -700,7 +707,7 @@ class MeasurementApp:
                 esa_beat_freq = self.measure_peak_frequency()
                 if wl_meter_beat_freq is None:
                     wl_meter_beat_freq = esa_beat_freq
-                current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
                 self.update_message_feed(f"Final Beat Frequency: {round(current_freq,2)} GHz")
                 enable_search = False  # Disable the search after reaching the starting frequency
 
@@ -824,6 +831,7 @@ class MeasurementApp:
             sweep_run_time = time_end - start_time_sweep
             total_run_time = time_end - start_time
             beat_freqs, powers, photo_currents, p_actuals = zip(*self.beat_freq_and_power)
+            self.p_actuals = list(p_actuals)
             self.calibrated_rf, self.rf_loss, self.rf_probe_loss, self.rf_link_loss = self.calculate_calibrated_rf(
                 powers, beat_freqs, s2p_filename=s2p_filename, excel_filename=excel_filename
             )
@@ -1059,7 +1067,6 @@ class MeasurementApp:
         self.rf_link_loss = []
         self.powers = []
         self.p_actuals = []
-        self.message_feed.delete(1.0, tk.END)
         texts_to_remove = [txt for txt in self.fig.texts if txt != self.fig._suptitle]
         for txt in texts_to_remove:
             txt.remove()
