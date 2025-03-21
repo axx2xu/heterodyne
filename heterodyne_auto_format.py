@@ -614,7 +614,78 @@ class MeasurementApp:
                     wl_meter_beat_freq = esa_beat_freq
                 current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
                 self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
-                enable_search = False  # Disable search after reaching starting frequency
+
+                # Instead of a single if, use a while loop for the second jump if current_freq > 2
+                max_attempts = 5
+                attempt = 0
+                while current_freq is not None and current_freq > 2 and attempt < max_attempts:
+                    self.update_message_feed("Attempting second small jump over ESA issues near 0 GHz...")
+                    laser_4_freq = c / (laser_4_WL * 1e-9)
+                    laser_4_new_freq = laser_4_freq - (0.4 * 1e9)
+                    laser_4_WL = (c / laser_4_new_freq) * 1e9
+                    self.set_laser_wavelength(4, laser_4_WL)
+                    time.sleep(3)
+                    wl_meter_beat_freq = self.measure_wavelength_beat()
+                    esa_beat_freq = self.measure_peak_frequency()
+                    if wl_meter_beat_freq is None:
+                        wl_meter_beat_freq = esa_beat_freq
+                    current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                    self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
+                    attempt += 1
+
+                if current_freq is None:
+                    self.update_message_feed("Measurement error: Unable to obtain a valid current frequency. Running the loop again.")
+                    # You can choose to continue the overall measurement loop or handle the error here.
+                else:
+                    self.update_message_feed(f"Final Beat Frequency: {round(current_freq,2)} GHz")
+
+                 # --- SECOND LOOP: Adjust laser 4 to reach the desired starting frequency ---
+                if start_freq > 1:
+                    self.update_message_feed("Adjusting laser 4 to reach starting beat frequency after passing 0...")
+                    update_laser = True
+                    while abs(current_freq - start_freq) > freq_threshold:
+                        if self.stop_event.is_set():
+                            self.update_message_feed("Data collection stopped by user.")
+                            break
+
+                        # Re-measure beat frequency using both instruments
+                        wl_meter_beat_freq = self.measure_wavelength_beat()
+                        esa_beat_freq = self.measure_peak_frequency()
+                        if wl_meter_beat_freq is None:
+                            wl_meter_beat_freq = esa_beat_freq
+                        if wl_meter_beat_freq is None or esa_beat_freq is None:
+                            continue
+
+                        current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                        self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
+
+                        # Calculate the current frequency of laser 4 and update it by half the difference
+                        laser_4_freq = c / (laser_4_WL * 1e-9)
+                        laser_4_new_freq = laser_4_freq - ((abs(start_freq - current_freq) * 1e9)) / 2
+                        laser_4_WL = (c / laser_4_new_freq) * 1e9
+
+                        if abs(current_freq - start_freq) <= freq_threshold:
+                            update_laser = False
+
+                        if update_laser:
+                            if 1540 < laser_4_WL < 1660:
+                                self.set_laser_wavelength(4, laser_4_WL)
+                            else:
+                                self.update_message_feed(f"New wavelength for laser 4 is out of bounds: {laser_4_WL:.3f} nm")
+                                return
+
+                        time.sleep(3)
+                        last_beat_freq = current_freq
+
+                # Final measurement after loop finishes
+                time.sleep(5)
+                wl_meter_beat_freq = self.measure_wavelength_beat()
+                esa_beat_freq = self.measure_peak_frequency()
+                if wl_meter_beat_freq is None:
+                    wl_meter_beat_freq = esa_beat_freq
+                current_freq = wl_meter_beat_freq if wl_meter_beat_freq > 50 else esa_beat_freq
+                self.update_message_feed(f"Final Beat Frequency: {round(current_freq,2)} GHz")
+                enable_search = False  # Disable the search after reaching the starting frequency
 
             # --- BEGIN DATA COLLECTION LOOP ---
             # Calculate step size for laser 4 frequency adjustment
