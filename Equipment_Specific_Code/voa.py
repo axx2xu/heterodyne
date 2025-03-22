@@ -15,6 +15,11 @@ p_actual = float(p_actual) # convert to float so it can be rounded
 p_actual = round(p_actual,3) # round 3 decimal places
 print(f"Power out {p_actual}")
 
+output_state = voa.query(":OUTPut:STATe?")
+if int(output_state) == 1:
+    print("VOA is ON")
+else:
+    print("VOA is OFF")
 voa.write('INITiate2:CHANnel1:IMMediate')
 voa.write('INPUT2:[CHANnel1]:WAVelength1540')
 voa.write('SYST:LOC')  # Put the VOA back into local mode so the attenuation can be adjusted
