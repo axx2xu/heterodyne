@@ -722,12 +722,6 @@ class MeasurementApp:
                     self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
                     attempt += 1
 
-                if current_freq is None:
-                    self.update_message_feed("Measurement error: Unable to obtain a valid current frequency. Running the loop again.")
-                    # You can choose to continue the overall measurement loop or handle the error here.
-                else:
-                    self.update_message_feed(f"Final Beat Frequency: {round(current_freq,2)} GHz")
-
                  # --- SECOND LOOP: Adjust laser 4 to reach the desired starting frequency ---
                 if start_freq > 1:
                     self.update_message_feed("Adjusting laser 4 to reach starting beat frequency after passing 0...")
