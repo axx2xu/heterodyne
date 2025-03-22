@@ -920,12 +920,13 @@ class MeasurementApp:
         device_num = self.device_num  # previously stored from the input dialog
         user_comment = self.user_comment
         file_path = self.save_file_path
-        excel_file_path = self.excel_file_path
         plot_file_path = self.plot_file_path
         keithley_voltage = self.keithley.query(':SOUR:VOLT:LEV:IMM:AMPL?').strip()
 
         # Adjust subplot parameters to add space for comments
-        self.fig.subplots_adjust(top=0.8)
+        self.fig.subplots_adjust(top=0.75)
+        self.fig.tight_layout(rect=[0, 0, 1, 0.85])  # Call tight_layout before adding text
+
         comments = [
             f"Device Number: {device_num}",
             f"Comments: {user_comment}",
@@ -942,10 +943,10 @@ class MeasurementApp:
         y_comment_start = 0.94
         y_comment_step = 0.02
         for i, comment in enumerate(comments):
-            self.fig.text(x_comment, y_comment_start - i * y_comment_step, comment, wrap=True,
-                            horizontalalignment='center', fontsize=10)
+            self.fig.text(x_comment, y_comment_start - i * y_comment_step, comment,
+                        wrap=True, horizontalalignment='center', fontsize=10)
 
-        # Maximize the window (cross-platform approaches)
+        # Maximize window if needed
         try:
             self.root.state('zoomed')
         except Exception:
@@ -954,7 +955,7 @@ class MeasurementApp:
             except Exception:
                 pass
 
-        # Adjust title and axis label font properties
+        # Update titles and axis labels
         title_font = {'size': '14', 'weight': 'bold'}
         label_font = {'size': '12', 'weight': 'bold'}
         self.ax1.set_title('Beat Frequency vs Step Number', fontdict=title_font)
@@ -971,7 +972,7 @@ class MeasurementApp:
         self.ax5.set_xlabel('Beat Frequency (GHz)', fontdict=label_font)
         self.ax5.set_ylabel('Calibrated RF Power (dBm)', fontdict=label_font)
 
-        # Manually set y-ticks for better readability (both raw and calibrated power)
+        # Manually set y-ticks for better readability
         min_power = min(self.powers)
         max_power = max(self.powers)
         yticks = np.arange(np.floor(min_power/3)*3, np.ceil(max_power/3)*3+3, 3)
@@ -983,8 +984,10 @@ class MeasurementApp:
         self.ax5.set_yticks(yticks)
         self.ax5.set_ylim(min(yticks), max(yticks))
 
-        self.fig.tight_layout(rect=[0, 0, 1, 0.85])
-        self.canvas.draw()
+        # Force canvas update using draw_idle and flush events
+        self.canvas.draw_idle()
+        self.canvas.get_tk_widget().update_idletasks()
+
 
         # Save measurement data to a text file
         with open(file_path, 'w') as f:
