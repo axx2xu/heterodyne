@@ -129,7 +129,7 @@ class MeasurementApp:
 
         # Delay between steps in the sweep
         ttk.Label(self.input_frame, text="Delay Between Steps (s):").grid(row=6, column=0, padx=5, pady=5, sticky="e")
-        self.delay_var = tk.DoubleVar(value=3.0)
+        self.delay_var = tk.DoubleVar(value=3.5)
         self.delay_entry = ttk.Entry(self.input_frame, textvariable=self.delay_var)
         self.delay_entry.grid(row=6, column=1, padx=5, pady=5)
 
@@ -229,7 +229,10 @@ class MeasurementApp:
         self.ax5.tick_params(axis='y', labelcolor='tab:blue')
         self.ax5.grid(True)
 
-        self.fig.tight_layout()
+        # Adjust subplot parameters to add space for comments
+        self.fig.subplots_adjust(top=0.95)
+        self.fig.tight_layout(rect=[0, 0, 1, 0.95])
+        
         # Embed the Matplotlib figure into the Tkinter plot frame
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.draw()
@@ -498,7 +501,9 @@ class MeasurementApp:
         """
         if not self.validate_inputs():
             return
-        threading.Thread(target=self.data_collection, daemon=True).start()
+        # Store the thread reference so we can join it later
+        self.measurement_thread = threading.Thread(target=self.data_collection, daemon=True)
+        self.measurement_thread.start()
 
     def data_collection(self):
         """
@@ -917,10 +922,6 @@ class MeasurementApp:
         plot_file_path = self.plot_file_path
         keithley_voltage = self.keithley.query(':SOUR:VOLT:LEV:IMM:AMPL?').strip()
 
-        # Adjust subplot parameters to add space for comments
-        self.fig.subplots_adjust(top=0.75)
-        self.fig.tight_layout(rect=[0, 0, 1, 0.85])  # Call tight_layout before adding text
-
         comments = [
             f"Device Number: {device_num}",
             f"Comments: {user_comment}",
@@ -932,13 +933,24 @@ class MeasurementApp:
             f"Excel Loss File: {self.excel_file_var.get() or 'None'}",
             f"S2P Loss File: {self.s2p_file_var.get() or 'None'}"
         ]
-        # Position comments on the plot
-        x_comment = 0.5
+
+        n = len(comments)
+        n_left = math.ceil(n / 2)  # Number of comments in the left column
+
+        left_x = 0.3   # x-coordinate for the left column (adjust as needed)
+        right_x = 0.7  # x-coordinate for the right column (adjust as needed)
         y_comment_start = 0.94
         y_comment_step = 0.02
+
         for i, comment in enumerate(comments):
-            self.fig.text(x_comment, y_comment_start - i * y_comment_step, comment,
-                        wrap=True, horizontalalignment='center', fontsize=10)
+            if i < n_left:
+                # Left column: use index i for y-coordinate
+                self.fig.text(left_x, y_comment_start - i * y_comment_step, comment,
+                            wrap=True, horizontalalignment='center', fontsize=10)
+            else:
+                # Right column: use index (i - n_left) for y-coordinate
+                self.fig.text(right_x, y_comment_start - (i - n_left) * y_comment_step, comment,
+                            wrap=True, horizontalalignment='center', fontsize=10)
 
         # Maximize window if needed
         try:
@@ -979,9 +991,15 @@ class MeasurementApp:
         self.ax5.set_ylim(min(yticks), max(yticks))
 
         # Force canvas update using draw_idle and flush events
-        self.canvas.draw_idle()
-        self.canvas.get_tk_widget().update_idletasks()
+        # Force full update of the canvas and window
+        self.canvas.draw()
+        time.sleep(1)            # Optional small delay
+        self.root.update()         # Force a full refresh of the GUI
+        time.sleep(0.2)            # Optional small delay
 
+            # Save the plot as an image
+        self.fig.savefig(plot_file_path)
+        self.update_message_feed(f"Data and plot saved to {file_path} and {plot_file_path}")
 
         # Save measurement data to a text file
         with open(file_path, 'w') as f:
@@ -1004,10 +1022,6 @@ class MeasurementApp:
                 f.write(f"{self.beat_freqs[i]:<10.2f}\t{self.photo_currents[i]:<10.4e}\t{self.powers[i]:<10.2f}\t"
                         f"{self.rf_loss[i]:<10.2f}\t{self.rf_probe_loss[i]:<10.2f}\t{self.rf_link_loss[i]:<10.2f}\t"
                         f"{self.calibrated_rf[i]:<10.2f}\t{self.p_actuals[i]:<10.3f}\n")
-
-        # Save the plot as an image
-        self.fig.savefig(plot_file_path, bbox_inches='tight')
-        self.update_message_feed(f"Data and plot saved to {file_path} and {plot_file_path}")
 
         # --- Create an Excel Workbook and Sheet for the data ---
         wb = Workbook()
@@ -1135,8 +1149,10 @@ class MeasurementApp:
         Confirm with the user before resetting the program.
         """
         if messagebox.askyesno("Confirm Exit", "Are you sure you want to reset the program?"):
-            self.stop_event.set()  # Stop any ongoing measurements
-            time.sleep(4)  # Wait for measurements to finish stopping
+            self.stop_event.set()  # Signal the thread to stop
+            # Wait for the measurement thread to finish (with a timeout to avoid blocking forever)
+            if hasattr(self, 'measurement_thread'):
+                self.measurement_thread.join(timeout=2)
             self.reset_program()
 
     def on_closing(self):
