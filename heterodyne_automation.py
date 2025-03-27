@@ -868,20 +868,26 @@ class MeasurementApp:
                     break
 
                 # Choose measurement method based on previous beat frequency
-                beat_freq = self.measure_peak_frequency() if last_beat_freq < 45 else self.measure_wavelength_beat()
-                if beat_freq is None:
-                    continue
+                wl_meter_beat_freq = self.measure_wavelength_beat()
+                esa_beat_freq = self.measure_peak_frequency()
+                if wl_meter_beat_freq is None:
+                    wl_meter_beat_freq = esa_beat_freq
+                beat_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
 
                 self.update_message_feed(f"Step {step + 1} of {num_steps}")
 
                 # For early steps near low start frequencies, adjust laser 4 more cautiously
-                if step < 5 and start_freq < 5 and beat_freq > 10:
+                if step < 2 and start_freq < 5 and beat_freq > 15:
                     laser_4_freq = c / (laser_4_WL * 1e-9)
                     laser_4_new_freq = laser_4_freq - (0.3 * 1e9)
                     laser_4_WL = (c / laser_4_new_freq) * 1e9
                     self.set_laser_wavelength(4, laser_4_WL)
                     time.sleep(delay)
-                    beat_freq = self.measure_peak_frequency() if last_beat_freq < 45 else self.measure_wavelength_beat()
+                    wl_meter_beat_freq = self.measure_wavelength_beat()
+                    esa_beat_freq = self.measure_peak_frequency()
+                    if wl_meter_beat_freq is None:
+                        wl_meter_beat_freq = esa_beat_freq
+                    beat_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
                     if beat_freq is None:
                         continue
 
@@ -902,9 +908,18 @@ class MeasurementApp:
                 self.voa.write('SYST:LOC')
                 while attempts < max_attempts and not success:
                     try:
+                        # Reinitialize RS power sensor configuration
+                        self.RS_power_sensor.write('INIT:CONT OFF')
+                        self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
+                        self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
+                        self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
+                        self.RS_power_sensor.write('SENS:AVER:STAT ON')
+                        self.RS_power_sensor.write('SENS:AVER:TCON REP')
+                        self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-2')
+                        time.sleep(0.1)
                         # WRITE TO THE R&S POWER SENSOR (averaging multiple measurements)
                         rf_outputs = []
-                        self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
+
                         time.sleep(0.1)
                         for i in range(5):
                             self.RS_power_sensor.write('INIT:IMM')
