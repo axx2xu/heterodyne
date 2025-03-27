@@ -657,7 +657,6 @@ class MeasurementApp:
             # Configure the sensor before measurement attempts
             self.RS_power_sensor.write('INIT:CONT OFF')
             self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
-            self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
             self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
             self.RS_power_sensor.write('SENS:AVER:STAT ON')
             self.RS_power_sensor.write('SENS:AVER:TCON REP')
@@ -905,6 +904,8 @@ class MeasurementApp:
                     try:
                         # WRITE TO THE R&S POWER SENSOR (averaging multiple measurements)
                         rf_outputs = []
+                        self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
+                        time.sleep(0.1)
                         for i in range(5):
                             self.RS_power_sensor.write('INIT:IMM')
                             time.sleep(0.1)
