@@ -302,6 +302,30 @@ class MeasurementApp:
         except Exception as e:
             self.update_message_feed(f"Error connecting to VISA devices: {e}")
 
+    def close_instruments(self):
+        try:
+            if self.ecl_adapter is not None:
+                self.ecl_adapter.close()
+                self.ecl_adapter = None
+            if self.wavelength_meter is not None:
+                self.wavelength_meter.close()
+                self.wavelength_meter = None
+            if self.spectrum_analyzer is not None:
+                self.spectrum_analyzer.close()
+                self.spectrum_analyzer = None
+            if self.keithley is not None:
+                self.keithley.close()
+                self.keithley = None
+            if self.RS_power_sensor is not None:
+                self.RS_power_sensor.close()
+                self.RS_power_sensor = None
+            if self.voa is not None:
+                self.voa.close()
+                self.voa = None
+            self.update_message_feed("Instruments closed successfully.")
+        except Exception as e:
+            self.update_message_feed(f"Error closing instruments: {e}")
+
     def measure_peak_frequency(self):
         """
         Measure the peak frequency using the spectrum analyzer.
@@ -1118,6 +1142,7 @@ class MeasurementApp:
         Reset all data containers and clear the GUI components.
         This is used to prepare the application for a new measurement run.
         """
+        # Clear data containers
         self.steps = []
         self.beat_freqs = []
         self.laser_4_wavelengths = []
@@ -1129,9 +1154,13 @@ class MeasurementApp:
         self.rf_link_loss = []
         self.powers = []
         self.p_actuals = []
+
+        # Remove extra text objects from the figure (keeping only the main title)
         texts_to_remove = [txt for txt in self.fig.texts if txt != self.fig._suptitle]
         for txt in texts_to_remove:
             txt.remove()
+
+        # Reset the plot data
         self.line1.set_data([], [])
         self.markers1.set_data([], [])
         self.line2.set_data([], [])
@@ -1147,9 +1176,16 @@ class MeasurementApp:
             ax.autoscale_view()
         self.canvas.draw()
         self.root.after(100, self.update_plots)
+
+        # Clear the events
         self.stop_event.clear()
         self.data_ready_event.clear()
         self.update_message_feed("Program reset and ready to start again.")
+
+        # Close instrument connections and re-open them to reinitialize the hardware state.
+        self.close_instruments()
+        self.open_instruments()
+
 
     def on_cancel(self):
         """
@@ -1158,10 +1194,16 @@ class MeasurementApp:
         """
         if messagebox.askyesno("Confirm Exit", "Are you sure you want to reset the program?"):
             self.stop_event.set()  # Signal the thread to stop
-            # Wait for the measurement thread to finish (with a timeout to avoid blocking forever)
+            # Wait for the measurement thread to finish (wait up to 5 seconds)
             if hasattr(self, 'measurement_thread'):
-                self.measurement_thread.join(timeout=2)
+                timeout = 5  # total seconds to wait
+                interval = 0.5  # check interval
+                waited = 0
+                while self.measurement_thread.is_alive() and waited < timeout:
+                    time.sleep(interval)
+                    waited += interval
             self.reset_program()
+
 
     def on_closing(self):
         """
