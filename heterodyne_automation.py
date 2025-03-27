@@ -172,16 +172,26 @@ class MeasurementApp:
     def setup_plots(self):
         """
         Initialize the Matplotlib figure and subplots for:
-          - Beat Frequency vs Step Number (with twin y-axis for Laser 4 wavelength)
-          - Raw RF Power vs Beat Frequency
-          - Photocurrent vs Beat Frequency
-          - Calibrated RF Power vs Beat Frequency
+        - Beat Frequency vs Step Number (with twin y-axis for Laser 4 wavelength)
+        - Raw RF Power vs Beat Frequency
+        - Photocurrent vs Beat Frequency
+        - Calibrated RF Power vs Beat Frequency
         Also embeds the figure into the Tkinter GUI and adds hover annotations.
         """
-        self.fig = Figure(figsize=(8, 6))
+        # Detect screen resolution and set the figure size accordingly.
+        screen_width = self.root.winfo_screenwidth()
+        # For example, if the resolution is 1280 or less, use a larger figure size.
+        if screen_width <= 1280:
+            fig_size = (12, 9)  # Adjust as needed for lower-resolution displays.
+        else:
+            fig_size = (8, 6)
+
+        # Create the figure with the chosen size.
+        self.fig = Figure(figsize=fig_size)
         self.axes = self.fig.subplots(2, 2)
         self.fig.suptitle("Measurement Plots", fontsize=16)
-        # Setup first subplot: Beat Frequency vs Step Number with twin axis for Laser 4 wavelength
+        
+        # Setup first subplot: Beat Frequency vs Step Number with twin axis for Laser 4 wavelength.
         self.ax1, self.ax3, self.ax4, self.ax5 = self.axes[0, 0], self.axes[0, 1], self.axes[1, 0], self.axes[1, 1]
         self.ax2 = self.ax1.twinx()
 
@@ -229,11 +239,11 @@ class MeasurementApp:
         self.ax5.tick_params(axis='y', labelcolor='tab:blue')
         self.ax5.grid(True)
 
-        # Adjust subplot parameters to add space for comments
+        # Adjust subplot parameters to add space for comments.
         self.fig.subplots_adjust(top=0.95)
         self.fig.tight_layout(rect=[0, 0, 1, 0.95])
         
-        # Embed the Matplotlib figure into the Tkinter plot frame
+        # Embed the Matplotlib figure into the Tkinter plot frame.
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -241,11 +251,12 @@ class MeasurementApp:
         self.toolbar.update()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # Add hover functionality using mplcursors (only annotate the markers)
+        # Add hover functionality using mplcursors (only annotate the markers).
         mplcursors.cursor(self.markers1, hover=mplcursors.HoverMode.Transient)
         mplcursors.cursor(self.markers3, hover=mplcursors.HoverMode.Transient)
         mplcursors.cursor(self.markers4, hover=mplcursors.HoverMode.Transient)
         mplcursors.cursor(self.markers5, hover=mplcursors.HoverMode.Transient)
+
 
     def select_s2p_file(self):
         """
@@ -357,18 +368,28 @@ class MeasurementApp:
         """
         Measure the beat frequency using the wavelength meter.
         Initiates a single measurement and then calculates the difference between two frequency readings.
+        If the returned beat frequency is below a valid threshold (e.g. 50 GHz), or if nothing is returned,
+        return None so that the ESA measurement is used instead.
         """
         try:
             self.wavelength_meter.write(":INIT:IMM")
             time.sleep(1.5)
-            data = self.wavelength_meter.query(":CALC3:DATA? FREQuency").strip().split(',')
+            result = self.wavelength_meter.query(":CALC3:DATA? FREQuency").strip()
+            # If the query returns an empty string, return None immediately.
+            if not result:
+                return None
+            data = result.split(',')
             freqs = [float(f) for f in data]
             beat_node = min(freqs)  # assuming the reference delta is 0
             self.wavelength_meter.write(":SYSTem:LOCal")
-            return abs(beat_node / 1e9)  # return beat node in GHz
+            beat_val = abs(beat_node / 1e9)  # Convert to GHz
+            if beat_val < 50:  # Threshold check
+                return None
+            return beat_val
         except Exception as e:
             self.update_message_feed(f"Error measuring beat frequency with wavelength meter: {e}")
             return None
+
     
     def zero_power_sensor(self):
         try:
@@ -633,6 +654,16 @@ class MeasurementApp:
                 print("Delta wavelength mode command did not complete as expected.")
             time.sleep(1)
 
+            # Configure the sensor before measurement attempts
+            self.RS_power_sensor.write('INIT:CONT OFF')
+            self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
+            self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
+            self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
+            self.RS_power_sensor.write('SENS:AVER:STAT ON')
+            self.RS_power_sensor.write('SENS:AVER:TCON REP')
+            self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-2')
+
+
             # Additional variables to track consecutive increases
             consecutive_increases = 0
             max_consecutive_increases = 3
@@ -744,7 +775,7 @@ class MeasurementApp:
                 # Instead of a single if, use a while loop for the second jump if current_freq > 2
                 max_attempts = 5
                 attempt = 0
-                while current_freq is not None and current_freq > 2 and attempt < max_attempts:
+                while current_freq is not None and current_freq > 10 and attempt < max_attempts:
                     self.update_message_feed("Attempting second small jump over ESA issues near 0 GHz...")
                     laser_4_freq = c / (laser_4_WL * 1e-9)
                     laser_4_new_freq = laser_4_freq - (0.4 * 1e9)
@@ -776,7 +807,7 @@ class MeasurementApp:
                         if wl_meter_beat_freq is None or esa_beat_freq is None:
                             continue
 
-                        current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 50 and wl_meter_beat_freq < 1000) else esa_beat_freq
+                        current_freq = wl_meter_beat_freq if (wl_meter_beat_freq > 45 and wl_meter_beat_freq < 1000) else esa_beat_freq
                         self.update_message_feed(f"Current Beat Frequency: {round(current_freq,2)} GHz")
 
                         # Calculate the current frequency of laser 4 and update it by half the difference
@@ -873,13 +904,6 @@ class MeasurementApp:
                 while attempts < max_attempts and not success:
                     try:
                         # WRITE TO THE R&S POWER SENSOR (averaging multiple measurements)
-                        self.RS_power_sensor.write('INIT:CONT OFF')
-                        self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
-                        self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
-                        self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
-                        self.RS_power_sensor.write('SENS:AVER:STAT ON')
-                        self.RS_power_sensor.write('SENS:AVER:TCON REP')
-                        self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-2')
                         rf_outputs = []
                         for i in range(5):
                             self.RS_power_sensor.write('INIT:IMM')
