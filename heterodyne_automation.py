@@ -169,93 +169,81 @@ class MeasurementApp:
         ttk.Label(self.input_frame, text="Click to zero the power meter").grid(row=18, column=0, columnspan=2)
         ttk.Label(self.input_frame, text="NOTE: VOA output must be disabled! The PD should not be receiving any light").grid(row=19, column=0, columnspan=2)
 
-    def setup_plots(self):
-        """
-        Initialize the Matplotlib figure and subplots for:
-        - Beat Frequency vs Step Number (with twin y-axis for Laser 4 wavelength)
-        - Raw RF Power vs Beat Frequency
-        - Photocurrent vs Beat Frequency
-        - Calibrated RF Power vs Beat Frequency
-        Also embeds the figure into the Tkinter GUI and adds hover annotations.
-        """
-        # Detect screen resolution and set the figure size accordingly.
-        screen_width = self.root.winfo_screenwidth()
-        # For example, if the resolution is 1280 or less, use a larger figure size.
-        if screen_width <= 1280:
-            fig_size = (12, 9)  # Adjust as needed for lower-resolution displays.
-        else:
-            fig_size = (8, 6)
+def setup_plots(self):
+    # Detect screen resolution and set parameters accordingly.
+    screen_width = self.root.winfo_screenwidth()
+    if screen_width <= 1280:
+        # For lower resolution screens, use a smaller figure and smaller fonts.
+        fig_size = (8, 6)
+        title_font = {'size': 10, 'weight': 'bold'}
+        label_font = {'size': 8, 'weight': 'bold'}
+        tick_font_size = 8
+        layout_pad = 0.5  # Smaller padding between subplots
+    else:
+        # For higher resolutions, use larger settings.
+        fig_size = (12, 9)
+        title_font = {'size': 14, 'weight': 'bold'}
+        label_font = {'size': 12, 'weight': 'bold'}
+        tick_font_size = 12
+        layout_pad = 1.0
 
-        # Create the figure with the chosen size.
-        self.fig = Figure(figsize=fig_size)
-        self.axes = self.fig.subplots(2, 2)
-        self.fig.suptitle("Measurement Plots", fontsize=16)
-        
-        # Setup first subplot: Beat Frequency vs Step Number with twin axis for Laser 4 wavelength.
-        self.ax1, self.ax3, self.ax4, self.ax5 = self.axes[0, 0], self.axes[0, 1], self.axes[1, 0], self.axes[1, 1]
-        self.ax2 = self.ax1.twinx()
+    # Create the figure with constrained_layout enabled to automatically adjust spacing.
+    self.fig = Figure(figsize=fig_size, constrained_layout=True)
+    self.fig.suptitle("Measurement Plots", fontsize=title_font['size'] + 2)
 
-        # Primary y-axis: Beat Frequency
-        self.ax1.set_xlabel('Step Number')
-        self.ax1.set_ylabel('Beat Frequency (GHz)', color='tab:blue')
-        self.ax1.set_title('Beat Frequency vs Step Number')
-        self.line1, = self.ax1.plot([], [], linestyle='-', color='tab:blue')  # Line plot
-        self.markers1, = self.ax1.plot([], [], 'o', color='tab:blue')          # Data point markers
-        self.ax1.tick_params(axis='y', labelcolor='tab:blue')
-        self.ax1.grid(True)
+    # Create 2x2 subplots.
+    self.axes = self.fig.subplots(2, 2)
+    self.ax1, self.ax3, self.ax4, self.ax5 = self.axes[0, 0], self.axes[0, 1], self.axes[1, 0], self.axes[1, 1]
+    self.ax2 = self.ax1.twinx()
 
-        # Twin y-axis: Laser 4 wavelength (nm)
-        self.ax2.set_ylabel('Laser 4 Wavelength (nm)', color='tab:red')
-        self.line2, = self.ax2.plot([], [], linestyle='--', color='tab:red')
-        self.markers2, = self.ax2.plot([], [], 'x', color='tab:red')
-        self.ax2.tick_params(axis='y', labelcolor='tab:red')
-        self.ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{x:.3f}'.rstrip('0').rstrip('.')))
+    # Set titles and labels using dynamic fonts.
+    self.ax1.set_title('Beat Frequency vs Step Number', fontdict=title_font)
+    self.ax1.set_xlabel('Step Number', fontdict=label_font)
+    self.ax1.set_ylabel('Beat Frequency (GHz)', fontdict=label_font)
+    self.ax2.set_ylabel('Laser 4 Wavelength (nm)', fontdict=label_font)
+    self.ax3.set_title('Raw RF Power vs Beat Frequency', fontdict=title_font)
+    self.ax3.set_xlabel('Beat Frequency (GHz)', fontdict=label_font)
+    self.ax3.set_ylabel('Raw RF Power (dBm)', fontdict=label_font)
+    self.ax4.set_title('Measured Photocurrent vs Beat Frequency', fontdict=title_font)
+    self.ax4.set_xlabel('Beat Frequency (GHz)', fontdict=label_font)
+    self.ax4.set_ylabel('Photocurrent (mA)', fontdict=label_font)
+    self.ax5.set_title('Calibrated RF Power vs Beat Frequency', fontdict=title_font)
+    self.ax5.set_xlabel('Beat Frequency (GHz)', fontdict=label_font)
+    self.ax5.set_ylabel('Calibrated RF Power (dBm)', fontdict=label_font)
 
-        # Second subplot: Raw RF Power vs Beat Frequency
-        self.ax3.set_xlabel('Beat Frequency (GHz)')
-        self.ax3.set_ylabel('Raw RF Power (dBm)', color='tab:blue')
-        self.ax3.set_title('Raw RF Power vs Beat Frequency')
-        self.line3, = self.ax3.plot([], [], linestyle='-', color='tab:blue')
-        self.markers3, = self.ax3.plot([], [], 'o', color='tab:blue')
-        self.ax3.tick_params(axis='y', labelcolor='tab:blue')
-        self.ax3.grid(True)
+    # Set tick label sizes.
+    self.ax1.tick_params(axis='y', labelsize=tick_font_size, labelcolor='tab:blue')
+    self.ax2.tick_params(axis='y', labelsize=tick_font_size, labelcolor='tab:red')
+    self.ax3.tick_params(axis='y', labelsize=tick_font_size, labelcolor='tab:blue')
+    self.ax4.tick_params(axis='y', labelsize=tick_font_size, labelcolor='tab:blue')
+    self.ax5.tick_params(axis='y', labelsize=tick_font_size, labelcolor='tab:blue')
 
-        # Third subplot: Photocurrent vs Beat Frequency
-        self.ax4.set_xlabel('Beat Frequency (GHz)')
-        self.ax4.set_ylabel('Photocurrent (mA)', color='tab:blue')
-        self.ax4.set_title('Measured Photocurrent vs Beat Frequency')
-        self.line4, = self.ax4.plot([], [], linestyle='-', color='tab:blue')
-        self.markers4, = self.ax4.plot([], [], 'o', color='tab:blue')
-        self.ax4.tick_params(axis='y', labelcolor='tab:blue')
-        self.ax4.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{x:.3f}'.rstrip('0').rstrip('.')))
-        self.ax4.grid(True)
+    # Create your plot lines and markers.
+    self.line1, = self.ax1.plot([], [], linestyle='-', color='tab:blue')
+    self.markers1, = self.ax1.plot([], [], 'o', color='tab:blue')
+    self.line2, = self.ax2.plot([], [], linestyle='--', color='tab:red')
+    self.markers2, = self.ax2.plot([], [], 'x', color='tab:red')
+    self.line3, = self.ax3.plot([], [], linestyle='-', color='tab:blue')
+    self.markers3, = self.ax3.plot([], [], 'o', color='tab:blue')
+    self.line4, = self.ax4.plot([], [], linestyle='-', color='tab:blue')
+    self.markers4, = self.ax4.plot([], [], 'o', color='tab:blue')
+    self.line5, = self.ax5.plot([], [], linestyle='-', color='tab:blue')
+    self.markers5, = self.ax5.plot([], [], 'o', color='tab:blue')
 
-        # Fourth subplot: Calibrated RF Power vs Beat Frequency
-        self.ax5.set_xlabel('Beat Frequency (GHz)')
-        self.ax5.set_ylabel('Calibrated RF Power (dBm)', color='tab:blue')
-        self.ax5.set_title('Calibrated RF Power vs Beat Frequency')
-        self.line5, = self.ax5.plot([], [], linestyle='-', color='tab:blue')
-        self.markers5, = self.ax5.plot([], [], 'o', color='tab:blue')
-        self.ax5.tick_params(axis='y', labelcolor='tab:blue')
-        self.ax5.grid(True)
+    # Embed the figure into the Tkinter plot frame.
+    self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
+    self.canvas.draw()
+    self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    self.toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
+    self.toolbar.update()
+    self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # Adjust subplot parameters to add space for comments.
-        self.fig.subplots_adjust(top=0.95)
-        self.fig.tight_layout(rect=[0, 0, 1, 0.95])
-        
-        # Embed the Matplotlib figure into the Tkinter plot frame.
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        self.toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
-        self.toolbar.update()
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    # Add hover functionality with mplcursors.
+    mplcursors.cursor(self.markers1, hover=mplcursors.HoverMode.Transient)
+    mplcursors.cursor(self.markers3, hover=mplcursors.HoverMode.Transient)
+    mplcursors.cursor(self.markers4, hover=mplcursors.HoverMode.Transient)
+    mplcursors.cursor(self.markers5, hover=mplcursors.HoverMode.Transient)
 
-        # Add hover functionality using mplcursors (only annotate the markers).
-        mplcursors.cursor(self.markers1, hover=mplcursors.HoverMode.Transient)
-        mplcursors.cursor(self.markers3, hover=mplcursors.HoverMode.Transient)
-        mplcursors.cursor(self.markers4, hover=mplcursors.HoverMode.Transient)
-        mplcursors.cursor(self.markers5, hover=mplcursors.HoverMode.Transient)
 
 
     def select_s2p_file(self):
@@ -1034,9 +1022,20 @@ class MeasurementApp:
             except Exception:
                 pass
 
-        # Update titles and axis labels
-        title_font = {'size': '14', 'weight': 'bold'}
-        label_font = {'size': '12', 'weight': 'bold'}
+        # Define dynamic font settings; adjust as needed based on resolution or available space.
+        screen_width = self.root.winfo_screenwidth()
+        if screen_width <= 1280:
+            dynamic_title_size = 10
+            dynamic_label_size = 8
+            title_weight = 'normal'  # Less bold on smaller screens
+        else:
+            dynamic_title_size = 14
+            dynamic_label_size = 12
+            title_weight = 'normal'  # Change to 'normal' if you don't want them bold
+
+        title_font = {'size': dynamic_title_size, 'weight': title_weight}
+        label_font = {'size': dynamic_label_size, 'weight': 'normal'}
+
         self.ax1.set_title('Beat Frequency vs Step Number', fontdict=title_font)
         self.ax1.set_xlabel('Step Number', fontdict=label_font)
         self.ax1.set_ylabel('Beat Frequency (GHz)', fontdict=label_font)
