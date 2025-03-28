@@ -302,7 +302,7 @@ class MeasurementApp:
             self.RS_power_sensor = self.rm.open_resource(self.RS_power_sensor_GPIB)
             self.voa = self.rm.open_resource(self.voa_GPIB)
 
-            self.RS_power_sensor.timeout = 10000
+            self.RS_power_sensor.timeout = 15000
             self.ecl_adapter.timeout = 5000
             self.wavelength_meter.timeout = 5000
             self.spectrum_analyzer.timeout = 5000
@@ -390,7 +390,6 @@ class MeasurementApp:
             self.update_message_feed(f"Error measuring beat frequency with wavelength meter: {e}")
             return None
 
-    rs
     def zero_power_sensor(self):
         try:
             output_state = self.voa.query(":OUTPut:STATe?").strip()
