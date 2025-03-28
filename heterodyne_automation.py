@@ -302,7 +302,7 @@ class MeasurementApp:
             self.RS_power_sensor = self.rm.open_resource(self.RS_power_sensor_GPIB)
             self.voa = self.rm.open_resource(self.voa_GPIB)
 
-            self.RS_power_sensor.timeout = 5000
+            self.RS_power_sensor.timeout = 10000
             self.ecl_adapter.timeout = 5000
             self.wavelength_meter.timeout = 5000
             self.spectrum_analyzer.timeout = 5000
@@ -390,7 +390,7 @@ class MeasurementApp:
             self.update_message_feed(f"Error measuring beat frequency with wavelength meter: {e}")
             return None
 
-    
+    rs
     def zero_power_sensor(self):
         try:
             output_state = self.voa.query(":OUTPut:STATe?").strip()
@@ -660,8 +660,7 @@ class MeasurementApp:
             self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
             self.RS_power_sensor.write('SENS:AVER:STAT ON')
             self.RS_power_sensor.write('SENS:AVER:TCON REP')
-            self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-2')
-
+            self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-1')
 
             # Additional variables to track consecutive increases
             consecutive_increases = 0
@@ -915,19 +914,19 @@ class MeasurementApp:
                         self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
                         self.RS_power_sensor.write('SENS:AVER:STAT ON')
                         self.RS_power_sensor.write('SENS:AVER:TCON REP')
-                        self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-2')
-                        time.sleep(0.1)
+                        self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-1')
+                        time.sleep(0.5)
                         # WRITE TO THE R&S POWER SENSOR (averaging multiple measurements)
                         rf_outputs = []
 
                         time.sleep(0.1)
                         for i in range(5):
                             self.RS_power_sensor.write('INIT:IMM')
-                            time.sleep(0.1)
+                            time.sleep(0.2)
                             output = self.RS_power_sensor.query('TRIG:IMM')
                             output = output.split(',')[0]  # Only use first value (power in Watts)
                             rf_outputs.append(float(output))
-                            time.sleep(0.1)
+                            time.sleep(0.2)
                         output = sum(rf_outputs) / len(rf_outputs)
                         output_dbm = math.log10(output) * 10 + 30  # Convert watts to dBm
                         output_dbm = round(output_dbm, 2)
@@ -937,7 +936,10 @@ class MeasurementApp:
                     except Exception as e:
                         self.update_message_feed(f"Error at step {step + 1}, attempt {attempts + 1}: {e}")
                         attempts += 1
-                        time.sleep(1)
+                        error = self.RS_power_sensor.query("SYST:ERR?")
+                        self.update_message_feed("RS sensor error: " + error)
+
+                        time.sleep(2)
                 if not success:
                     self.update_message_feed(f"Measurement failed after {max_attempts} attempts at step {step + 1}")
                     continue
