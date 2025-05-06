@@ -13,9 +13,9 @@ def main():
     # 1) Zero sensor A
     # Syntax: ZERO <s>      s = A or B
     # Zeros the selected sensor, compensating for internal noise/EMF. :contentReference[oaicite:0]{index=0}:contentReference[oaicite:1]{index=1}
-    print("Zeroing sensor A…")
-    meter.write('ZERO A')
-    time.sleep(8)  # allow zero to complete
+    # print("Zeroing sensor A…")
+    # meter.write('ZERO A')
+    # time.sleep(8)  # allow zero to complete
 
     # 2) Set the calibration‐factor lookup frequency
     # Syntax: CFFRQ <s>,<value>[units]

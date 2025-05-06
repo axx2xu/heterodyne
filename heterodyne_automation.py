@@ -978,185 +978,176 @@ class MeasurementApp:
             self.reset_program()
 
     def save_data(self, sweep_run_time, total_run_time):
-        """
-        Save the data and plot.
-        Comments are added to a margin above the plots so that they do not overlap with the axes.
-        """
-        # Retrieve additional inputs (these should have been updated via the pop-up)
-        device_num = self.device_num
-        user_comment = self.user_comment
-        file_path = self.save_file_path
-        plot_file_path = self.plot_file_path
-        keithley_voltage = self.keithley.query(':SOUR:VOLT:LEV:IMM:AMPL?').strip()
+         """
+         Save the data and plot:
+          - Create a pop-up window to ask for Device Number and Comments.
+          - Ask the user for a file path to save the text data.
+          - Append comments and measurement parameters to the plot.
+          - Save the data in both text and Excel formats.
+         """
+                 # Retrieve additional inputs
+         device_num = self.device_num  # previously stored from the input dialog
+         user_comment = self.user_comment
+         file_path = self.save_file_path
+         plot_file_path = self.plot_file_path
+         keithley_voltage = self.keithley.query(':SOUR:VOLT:LEV:IMM:AMPL?').strip()
+ 
+         comments = [
+             f"Device Number: {device_num}",
+             f"Comments: {user_comment}",
+             f"Date: {time.strftime('%m/%d/%Y')}",
+             f"Time: {time.strftime('%H:%M:%S')}",
+             f"Frequency Sweep Run Time: {sweep_run_time:.2f} s",
+             f"Total Run Time: {total_run_time:.2f} s",
+             f"Keithley Voltage: {keithley_voltage} V",
+             f"Excel Loss File: {self.excel_file_var.get() or 'None'}",
+             f"S2P Loss File: {self.s2p_file_var.get() or 'None'}"
+         ]
+ 
+         n = len(comments)
+         n_left = math.ceil(n / 2)  # Number of comments in the left column
+ 
+         left_x = 0.3   # x-coordinate for the left column (adjust as needed)
+         right_x = 0.7  # x-coordinate for the right column (adjust as needed)
+         y_comment_start = 0.94
+         y_comment_step = 0.02
+ 
+         for i, comment in enumerate(comments):
+             if i < n_left:
+                 # Left column: use index i for y-coordinate
+                 self.fig.text(left_x, y_comment_start - i * y_comment_step, comment,
+                             wrap=True, horizontalalignment='center', fontsize=10)
+             else:
+                 # Right column: use index (i - n_left) for y-coordinate
+                 self.fig.text(right_x, y_comment_start - (i - n_left) * y_comment_step, comment,
+                             wrap=True, horizontalalignment='center', fontsize=10)
+ 
+         # Maximize window if needed
+         try:
+             self.root.state('zoomed')
+         except Exception:
+             try:
+                 self.root.attributes('-fullscreen', True)
+             except Exception:
+                 pass
 
-        comments = [
-            f"Device Number: {device_num}",
-            f"Comments: {user_comment}",
-            f"Date: {time.strftime('%m/%d/%Y')}",
-            f"Time: {time.strftime('%H:%M:%S')}",
-            f"Frequency Sweep Run Time: {sweep_run_time:.2f} s",
-            f"Total Run Time: {total_run_time:.2f} s",
-            f"Keithley Voltage: {keithley_voltage} V",
-            f"Excel Loss File: {self.excel_file_var.get() or 'None'}",
-            f"S2P Loss File: {self.s2p_file_var.get() or 'None'}"
-        ]
-
-        n = len(comments)
-        n_left = math.ceil(n / 2)
-        left_x = 0.15   # Adjusted to place text in a left margin outside axes.
-        right_x = 0.85  # Adjusted for right margin.
-        y_comment_start = 0.98  # Place comments near the top.
-        y_comment_step = 0.02
-        text_font_size = 10  # You can compute this dynamically if desired.
-
-        # Add the comments above the plot area.
-        for i, comment in enumerate(comments):
-            if i < n_left:
-                self.fig.text(left_x, y_comment_start - i * y_comment_step, comment,
-                            wrap=True, horizontalalignment='left', fontsize=text_font_size)
-            else:
-                self.fig.text(right_x, y_comment_start - (i - n_left) * y_comment_step, comment,
-                            wrap=True, horizontalalignment='right', fontsize=text_font_size)
-
-        # Optionally, ensure the main window is maximized.
-        try:
-            self.root.state('zoomed')
-        except Exception:
-            try:
-                self.root.attributes('-fullscreen', True)
-            except Exception:
-                pass
-
-        # Reapply dynamic axis titles and labels (assuming these were stored in self.dynamic_title_font)
-        self.ax1.set_title('Beat Frequency vs Step Number', fontdict=self.dynamic_title_font)
-        self.ax1.set_xlabel('Step Number', fontdict=self.dynamic_label_font)
-        self.ax1.set_ylabel('Beat Frequency (GHz)', fontdict=self.dynamic_label_font)
-        self.ax2.set_ylabel('Laser 4 Wavelength (nm)', fontdict=self.dynamic_label_font)
-        self.ax3.set_title('Raw RF Power vs Beat Frequency', fontdict=self.dynamic_title_font)
-        self.ax3.set_xlabel('Beat Frequency (GHz)', fontdict=self.dynamic_label_font)
-        self.ax3.set_ylabel('Raw RF Power (dBm)', fontdict=self.dynamic_label_font)
-        self.ax4.set_title('Measured Photocurrent vs Beat Frequency', fontdict=self.dynamic_title_font)
-        self.ax4.set_xlabel('Beat Frequency (GHz)', fontdict=self.dynamic_label_font)
-        self.ax4.set_ylabel('Photocurrent (mA)', fontdict=self.dynamic_label_font)
-        self.ax5.set_title('Calibrated RF Power vs Beat Frequency', fontdict=self.dynamic_title_font)
-        self.ax5.set_xlabel('Beat Frequency (GHz)', fontdict=self.dynamic_label_font)
-        self.ax5.set_ylabel('Calibrated RF Power (dBm)', fontdict=self.dynamic_label_font)
-
-        # Manually set y-ticks for better readability.
-        min_power = min(self.powers)
-        max_power = max(self.powers)
-        yticks = np.arange(np.floor(min_power/3)*3, np.ceil(max_power/3)*3+3, 3)
-        self.ax3.set_yticks(yticks)
-        self.ax3.set_ylim(min(yticks), max(yticks))
-        min_calibrated_rf = min(self.calibrated_rf)
-        max_calibrated_rf = max(self.calibrated_rf)
-        yticks = np.arange(np.floor(min_calibrated_rf/3)*3, np.ceil(max_calibrated_rf/3)*3+3, 3)
-        self.ax5.set_yticks(yticks)
-        self.ax5.set_ylim(min(yticks), max(yticks))
-
-        self.canvas.draw()
-        time.sleep(1)
-        self.root.update()
-        time.sleep(0.2)
-
-        # Save the plot image.
-        self.fig.savefig(plot_file_path)
-        self.update_message_feed(f"Data and plot saved to {file_path} and {plot_file_path}")
-
-        # Save measurement data to a text file.
-        with open(file_path, 'w') as f:
-            f.write("DEVICE NUMBER: " + str(device_num) + "\n")
-            f.write("COMMENTS: " + user_comment + "\n")
-            f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
-            f.write("FREQUENCY SWEEP RUN TIME: " + f"{sweep_run_time:.2f}" + " s" + "\n")
-            f.write("TOTAL RUN TIME: " + f"{total_run_time:.2f}" + " s" + "\n")
-            f.write("RF Link Loss File (.xlsx): " + str(self.excel_file_var.get() or 'None') + "\n")
-            f.write("RF Probe Loss File (.s2p): " + str(self.s2p_file_var.get() or 'None') + "\n")
-            f.write("INITIAL PHOTOCURRENT: " + str(self.photo_currents[0]) + " (mA)" + "\n")
-            f.write("STARTING WAVELENGTH FOR LASER 3: " + str(self.laser_3_var.get()) +
-                    " (nm) : STARTING WAVELENGTH FOR LASER 4: " + f"{self.laser_4_wavelengths[0]:.3f}" +
-                    " (nm) : DELAY: " + str(self.delay_var.get()) + " (s) " + "\n")
-            f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
-            f.write("TIME: " + time.strftime("%H:%M:%S") + "\n\n")
-            f.write("F_BEAT(GHz)\tI_PD (mA)\tRaw RF POW (dBm)\tTotal RF Loss (dB)\tProbe RF Loss (dB)\tLink RF Loss (dB)\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
-            for i in range(len(self.steps)):
-                f.write(f"{self.beat_freqs[i]:<10.2f}\t{self.photo_currents[i]:<10.4e}\t{self.powers[i]:<10.2f}\t"
-                        f"{self.rf_loss[i]:<10.2f}\t{self.rf_probe_loss[i]:<10.2f}\t{self.rf_link_loss[i]:<10.2f}\t"
-                        f"{self.calibrated_rf[i]:<10.2f}\t{self.p_actuals[i]:<10.3f}\n")
-
-        # --- Create an Excel Workbook and Sheet for the data ---
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Experiment Data"
-        ws.append(["DEVICE NUMBER", device_num])
-        ws.append(["COMMENTS", user_comment])
-        ws.append(["KEITHLEY VOLTAGE", f"{keithley_voltage} V"])
-        ws.append(["INITIAL PHOTOCURRENT", f"{self.photo_currents[0]} (mA)"])
-        ws.append(["STARTING WAVELENGTH FOR LASER 3", f"{self.laser_3_var.get()} (nm)"])
-        ws.append(["STARTING WAVELENGTH FOR LASER 4", f"{self.laser_4_wavelengths[0]:.3f} (nm)"])
-        ws.append(["DELAY", f"{self.delay_var.get()} (s)"])
-        ws.append(["FREQUENCY SWEEP RUN TIME", f"{sweep_run_time:.2f} s"])
-        ws.append(["TOTAL RUN TIME", f"{total_run_time:.2f} s"])
-        ws.append(["EXCEL LOSS FILE", self.excel_file_var.get() or 'None'])
-        ws.append(["S2P LOSS FILE", self.s2p_file_var.get() or 'None'])
-        ws.append(["DATE", time.strftime("%m/%d/%Y")])
-        ws.append(["TIME", time.strftime("%H:%M:%S")])
-        ws.append([])
-        ws.append(["F_BEAT (GHz)", "I_PD (mA)", "Raw RF POW (dBm)",
-                "Total RF Loss (dB)", "RF Probe Loss (dB)",
-                "RF Link Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
-        for i in range(len(self.steps)):
-            ws.append([
-                f"{self.beat_freqs[i]:.2f}",
-                f"{self.photo_currents[i]}",
-                f"{self.powers[i]:.2f}",
-                f"{self.rf_loss[i]:.2f}",
-                f"{self.rf_probe_loss[i]:.2f}",
-                f"{self.rf_link_loss[i]:.2f}",
-                f"{self.calibrated_rf[i]:.2f}",
-                f"{self.p_actuals[i]:.3f}"
-            ])
-        # Adjust column widths.
-        for column in ws.columns:
-            max_length = 0
-            column = list(column)
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except Exception:
-                    pass
-            adjusted_width = (max_length + 2)
-            ws.column_dimensions[column[0].column_letter].width = adjusted_width
-        wb.save(file_path.replace(".txt", ".xlsx"))
-        self.update_message_feed(f"Excel data saved to {file_path.replace('.txt', '.xlsx')}")
-
-
-
+         # Manually set y-ticks for better readability
+         min_power = min(self.powers)
+         max_power = max(self.powers)
+         yticks = np.arange(np.floor(min_power/3)*3, np.ceil(max_power/3)*3+3, 3)
+         self.ax3.set_yticks(yticks)
+         self.ax3.set_ylim(min(yticks), max(yticks))
+         min_calibrated_rf = min(self.calibrated_rf)
+         max_calibrated_rf = max(self.calibrated_rf)
+         yticks = np.arange(np.floor(min_calibrated_rf/3)*3, np.ceil(max_calibrated_rf/3)*3+3, 3)
+         self.ax5.set_yticks(yticks)
+         self.ax5.set_ylim(min(yticks), max(yticks))
+ 
+         # Force canvas update using draw_idle and flush events
+         # Force full update of the canvas and window
+         self.canvas.draw()
+         time.sleep(1)            # Optional small delay
+         self.root.update()         # Force a full refresh of the GUI
+         time.sleep(0.2)            # Optional small delay
+ 
+             # Save the plot as an image
+         self.fig.savefig(plot_file_path)
+         self.update_message_feed(f"Data and plot saved to {file_path} and {plot_file_path}")
+ 
+         # Save measurement data to a text file
+         with open(file_path, 'w') as f:
+             f.write("DEVICE NUMBER: " + str(device_num) + "\n")
+             f.write("COMMENTS: " + user_comment + "\n")
+             f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
+             f.write("FREQUENCY SWEEP RUN TIME: " + f"{sweep_run_time:.2f}" + " s" + "\n")
+             f.write("TOTAL RUN TIME: " + f"{total_run_time:.2f}" + " s" + "\n")
+             f.write("RF Link Loss File (.xlsx): " + str(self.excel_file_var.get() or 'None') + "\n")
+             f.write("RF Probe Loss File (.s2p): " + str(self.s2p_file_var.get() or 'None') + "\n")
+             f.write("INITIAL PHOTOCURRENT: " + str(self.photo_currents[0]) + " (mA)" + "\n")
+             f.write("STARTING WAVELENGTH FOR LASER 3: " + str(self.laser_3_var.get()) +
+                     " (nm) : STARTING WAVELENGTH FOR LASER 4: " + f"{self.laser_4_wavelengths[0]:.3f}" +
+                     " (nm) : DELAY: " + str(self.delay_var.get()) + " (s) " + "\n")
+             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
+             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
+             f.write("\n")
+             f.write("F_BEAT(GHz)\tI_PD (mA)\tRaw RF POW (dBm)\tTotal RF Loss (dB)\tProbe RF Loss (dB)\tLink RF Loss (dB)\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
+             for i in range(len(self.steps)):
+                 f.write(f"{self.beat_freqs[i]:<10.2f}\t{self.photo_currents[i]:<10.4e}\t{self.powers[i]:<10.2f}\t"
+                         f"{self.rf_loss[i]:<10.2f}\t{self.rf_probe_loss[i]:<10.2f}\t{self.rf_link_loss[i]:<10.2f}\t"
+                         f"{self.calibrated_rf[i]:<10.2f}\t{self.p_actuals[i]:<10.3f}\n")
+ 
+         # --- Create an Excel Workbook and Sheet for the data ---
+         wb = Workbook()
+         ws = wb.active
+         ws.title = "Experiment Data"
+         ws.append(["DEVICE NUMBER", device_num])
+         ws.append(["COMMENTS", user_comment])
+         ws.append(["KEITHLEY VOLTAGE", f"{keithley_voltage} V"])
+         ws.append(["INITIAL PHOTOCURRENT", f"{self.photo_currents[0]} (mA)"])
+         ws.append(["STARTING WAVELENGTH FOR LASER 3", f"{self.laser_3_var.get()} (nm)"])
+         ws.append(["STARTING WAVELENGTH FOR LASER 4", f"{self.laser_4_wavelengths[0]:.3f} (nm)"])
+         ws.append(["DELAY", f"{self.delay_var.get()} (s)"])
+         ws.append(["FREQUENCY SWEEP RUN TIME", f"{sweep_run_time:.2f} s"])
+         ws.append(["TOTAL RUN TIME", f"{total_run_time:.2f} s"])
+         ws.append(["EXCEL LOSS FILE", self.excel_file_var.get() or 'None'])
+         ws.append(["S2P LOSS FILE", self.s2p_file_var.get() or 'None'])
+         ws.append(["DATE", time.strftime("%m/%d/%Y")])
+         ws.append(["TIME", time.strftime("%H:%M:%S")])
+         ws.append([])
+         ws.append(["F_BEAT (GHz)", "I_PD (mA)", "Raw RF POW (dBm)",
+                     "Total RF Loss (dB)", "RF Probe Loss (dB)",
+                     "RF Link Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
+         for i in range(len(self.steps)):
+             ws.append([
+                 f"{self.beat_freqs[i]:.2f}",
+                 f"{self.photo_currents[i]}",
+                 f"{self.powers[i]:.2f}",
+                 f"{self.rf_loss[i]:.2f}",
+                 f"{self.rf_probe_loss[i]:.2f}",
+                 f"{self.rf_link_loss[i]:.2f}",
+                 f"{self.calibrated_rf[i]:.2f}",
+                 f"{self.p_actuals[i]:.3f}"
+             ])
+         # Adjust column widths
+         for column in ws.columns:
+             max_length = 0
+             column = list(column)
+             for cell in column:
+                 try:
+                     if len(str(cell.value)) > max_length:
+                         max_length = len(str(cell.value))
+                 except Exception:
+                     pass
+             adjusted_width = (max_length + 2)
+             ws.column_dimensions[column[0].column_letter].width = adjusted_width
+         wb.save(file_path.replace(".txt", ".xlsx"))
+         self.update_message_feed(f"Excel data saved to {file_path.replace('.txt', '.xlsx')}")
+ 
+ 
     def update_plots(self):
-        """
-        Update the Matplotlib plots with the latest data.
-        This method is repeatedly called using Tkinter's after() method.
-        """
-        if self.data_ready_event.is_set():
-            self.line1.set_data(self.steps, self.beat_freqs)
-            self.markers1.set_data(self.steps, self.beat_freqs)
-            self.line2.set_data(self.steps, self.laser_4_wavelengths)
-            self.markers2.set_data(self.steps, self.laser_4_wavelengths)
-            self.line3.set_data(self.beat_freqs, self.powers)
-            self.markers3.set_data(self.beat_freqs, self.powers)
-            self.line4.set_data(self.beat_freqs, self.photo_currents)
-            self.markers4.set_data(self.beat_freqs, self.photo_currents)
-            if not self.looping:
-                self.line5.set_data(self.beat_freqs, self.calibrated_rf)
-                self.markers5.set_data(self.beat_freqs, self.calibrated_rf)
-            for ax in [self.ax1, self.ax2, self.ax3, self.ax4, self.ax5]:
-                ax.relim()
-                ax.autoscale_view()
-            self.canvas.draw()
-            self.data_ready_event.clear()
-        if not self.stop_event.is_set():
-            self.root.after(100, self.update_plots)
+         """
+         Update the Matplotlib plots with the latest data.
+         This method is repeatedly called using Tkinter's after() method.
+         """
+         if self.data_ready_event.is_set():
+             self.line1.set_data(self.steps, self.beat_freqs)
+             self.markers1.set_data(self.steps, self.beat_freqs)
+             self.line2.set_data(self.steps, self.laser_4_wavelengths)
+             self.markers2.set_data(self.steps, self.laser_4_wavelengths)
+             self.line3.set_data(self.beat_freqs, self.powers)
+             self.markers3.set_data(self.beat_freqs, self.powers)
+             self.line4.set_data(self.beat_freqs, self.photo_currents)
+             self.markers4.set_data(self.beat_freqs, self.photo_currents)
+             if not self.looping:
+                 self.line5.set_data(self.beat_freqs, self.calibrated_rf)
+                 self.markers5.set_data(self.beat_freqs, self.calibrated_rf)
+             for ax in [self.ax1, self.ax2, self.ax3, self.ax4, self.ax5]:
+                 ax.relim()
+                 ax.autoscale_view()
+             self.canvas.draw()
+             self.data_ready_event.clear()
+         if not self.stop_event.is_set():
+             self.root.after(100, self.update_plots)
 
     def on_stop(self):
         """
