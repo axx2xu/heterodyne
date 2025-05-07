@@ -177,3 +177,4 @@ heterodyne_automation.spec
 Test_Outputs/*
 measurement_data/*
 ComPD_tests
+*.xlsx
