@@ -33,7 +33,7 @@ class MeasurementApp:
         self.wavelength_meter_GPIB = 'GPIB0::20::INSTR'      # Wavelength meter
         self.spectrum_analyzer_GPIB = 'GPIB0::18::INSTR'     # Spectrum analyzer
         self.keithley_GPIB = 'GPIB0::24::INSTR'              # Keithley source meter
-        self.RS_power_sensor_GPIB = 'RSNRP::0x00a8::100940::INSTR'  # R&S power sensor
+        self.power_sensor_GPIB = 'GPIB0::13::INSTR'  # Anritsu power sensor
         self.voa_GPIB = 'GPIB0::26::INSTR'                   # VOA
 
         # Instrument objects (to be opened later)
@@ -41,7 +41,7 @@ class MeasurementApp:
         self.wavelength_meter = None
         self.spectrum_analyzer = None
         self.keithley = None
-        self.RS_power_sensor = None
+        self.power_sensor = None
         self.voa = None
 
         # Data containers for measurements and calibration
@@ -296,15 +296,15 @@ class MeasurementApp:
             self.wavelength_meter = self.rm.open_resource(self.wavelength_meter_GPIB)
             self.spectrum_analyzer = self.rm.open_resource(self.spectrum_analyzer_GPIB)
             self.keithley = self.rm.open_resource(self.keithley_GPIB)
-            self.RS_power_sensor = self.rm.open_resource(self.RS_power_sensor_GPIB)
+            self.power_sensor = self.rm.open_resource(self.power_sensor_GPIB)
             self.voa = self.rm.open_resource(self.voa_GPIB)
 
-            self.RS_power_sensor.timeout = 15000
-            self.ecl_adapter.timeout = 5000
-            self.wavelength_meter.timeout = 5000
-            self.spectrum_analyzer.timeout = 5000
-            self.keithley.timeout = 5000
-            self.voa.timeout = 5000
+            self.power_sensor.timeout = 15000
+            self.ecl_adapter.timeout = 10000
+            self.wavelength_meter.timeout = 10000
+            self.spectrum_analyzer.timeout = 10000
+            self.keithley.timeout = 10000
+            self.voa.timeout = 10000
         
             self.update_message_feed("Successfully connected to all VISA devices.")
         except Exception as e:
@@ -324,9 +324,9 @@ class MeasurementApp:
             if self.keithley is not None:
                 self.keithley.close()
                 self.keithley = None
-            if self.RS_power_sensor is not None:
-                self.RS_power_sensor.close()
-                self.RS_power_sensor = None
+            if self.power_sensor is not None:
+                self.power_sensor.close()
+                self.power_sensor = None
             if self.voa is not None:
                 self.voa.close()
                 self.voa = None
@@ -394,13 +394,51 @@ class MeasurementApp:
                 self.update_message_feed("VOA is currently enabled, disable before zeroing power meter...")
                 raise Exception("VOA is enabled")
             self.update_message_feed("Zeroing power sensor...")
-            # Assuming RS_power_sensor is your power meter:
-            self.RS_power_sensor.write('CAL:ZERO:AUTO ONCE')
+            # Anritsu ML2437A Power Meter:
+            self.power_sensor.write('ZERO A')
             time.sleep(10)  # wait 10 seconds for the zeroing process to complete
             self.update_message_feed("Power sensor zeroing completed.")
             self.voa.write(":SYSTem:LOCal")
         except Exception as e:
             self.update_message_feed(f"Error during power sensor zeroing: {e}")
+
+    def measure_rf_power(self, beat_freq, max_attempts=3):
+        """
+        Safely measure RF power at beat_freq. Returns dBm or None if all attempts time out.
+        """
+        for attempt in range(1, max_attempts+1):
+            try:
+                self.power_sensor.write(f"CFFRQ A,{beat_freq}E9")
+                self.power_sensor.write('CFSRC A,FREQ')
+                
+                time.sleep(0.2)
+
+                readings = []
+                for _ in range(5):
+                    self.power_sensor.write('STA 1')
+                    time.sleep(0.1)  # Allow time for the measurement to stabilize
+
+                    reading = self.power_sensor.query('O 1')
+                    pwr_dbm = float(reading.strip())
+
+                    # Append dBm reading for averaging
+                    readings.append(pwr_dbm)
+                    time.sleep(0.1)
+
+                avg_pow = sum(readings) / len(readings)
+                return avg_pow
+
+            except pyvisa.errors.VisaIOError:
+                self.update_message_feed(
+                    f"Power sensor timeout (attempt {attempt}/{max_attempts}), retrying..."
+                )
+                time.sleep(0.5)
+
+        self.update_message_feed(
+            "Power sensor unavailable after retries—continuing sweep without RF data."
+        )
+        return None
+
 
     def start_zeroing(self):
         # Launch the zeroing process in a separate thread
@@ -650,14 +688,6 @@ class MeasurementApp:
                 print("Delta wavelength mode command did not complete as expected.")
             time.sleep(1)
 
-            # Configure the sensor before measurement attempts
-            self.RS_power_sensor.write('INIT:CONT OFF')
-            self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
-            self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
-            self.RS_power_sensor.write('SENS:AVER:STAT ON')
-            self.RS_power_sensor.write('SENS:AVER:TCON REP')
-            self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-1')
-
             # Additional variables to track consecutive increases
             consecutive_increases = 0
             max_consecutive_increases = 3
@@ -901,44 +931,18 @@ class MeasurementApp:
                 p_actual = self.voa.query('READ:POW?')
                 p_actual = round(float(p_actual), 3)
                 self.voa.write('SYST:LOC')
-                while attempts < max_attempts and not success:
-                    try:
-                        # Reinitialize RS power sensor configuration
-                        self.RS_power_sensor.write('INIT:CONT OFF')
-                        self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
-                        self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
-                        self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
-                        self.RS_power_sensor.write('SENS:AVER:STAT ON')
-                        self.RS_power_sensor.write('SENS:AVER:TCON REP')
-                        self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-1')
-                        time.sleep(0.5)
-                        # WRITE TO THE R&S POWER SENSOR (averaging multiple measurements)
-                        rf_outputs = []
-
-                        time.sleep(0.1)
-                        for i in range(5):
-                            self.RS_power_sensor.write('INIT:IMM')
-                            time.sleep(0.2)
-                            output = self.RS_power_sensor.query('TRIG:IMM')
-                            output = output.split(',')[0]  # Only use first value (power in Watts)
-                            rf_outputs.append(float(output))
-                            time.sleep(0.2)
-                        output = sum(rf_outputs) / len(rf_outputs)
-                        output_dbm = math.log10(output) * 10 + 30  # Convert watts to dBm
-                        output_dbm = round(output_dbm, 2)
-                        beat_freq = round(beat_freq, 2)
-                        self.beat_freq_and_power.append((beat_freq, output_dbm, current, p_actual))
-                        success = True
-                    except Exception as e:
-                        self.update_message_feed(f"Error at step {step + 1}, attempt {attempts + 1}: {e}")
-                        attempts += 1
-                        error = self.RS_power_sensor.query("SYST:ERR?")
-                        self.update_message_feed("RS sensor error: " + error)
-
-                        time.sleep(2)
-                if not success:
-                    self.update_message_feed(f"Measurement failed after {max_attempts} attempts at step {step + 1}")
-                    continue
+                
+                output_dbm = self.measure_rf_power(beat_freq)
+                if output_dbm is None:
+                    # record placeholder (or skip)
+                    self.beat_freq_and_power.append(
+                        (beat_freq, float('nan'), current, p_actual)
+                    )
+                else:
+                    power = round(output_dbm, 2)
+                    self.beat_freq_and_power.append(
+                        (beat_freq, power, current, p_actual)
+                    )
 
                 self.update_message_feed(f"Beat Frequency: {round(beat_freq,2)} GHz")
                 self.update_message_feed(f"Measured Photocurrent: {current} mA")
@@ -959,8 +963,9 @@ class MeasurementApp:
                 last_beat_freq = beat_freq
                 self.data_ready_event.set()
                 time.sleep(delay)
-            self.looping = False
+
             self.update_message_feed("Data collection completed.")
+            self.looping = False
             time_end = time.time()
             sweep_run_time = time_end - start_time_sweep
             total_run_time = time_end - start_time
@@ -972,157 +977,186 @@ class MeasurementApp:
             self.data_ready_event.set()
 
             # After data collection, prompt user for additional inputs and save data
-            self.save_data(sweep_run_time, total_run_time)
+            volt = self.keithley.query(':SOUR:VOLT:LEV:IMM:AMPL?').strip()
+            self.keithley_voltage = volt
+
+            self.root.after(0, lambda: self.save_data(sweep_run_time, total_run_time))
+            return
         except Exception as e:
             self.update_message_feed(f"Error in data collection: {e}")
             self.reset_program()
 
     def save_data(self, sweep_run_time, total_run_time):
-         """
-         Save the data and plot:
-          - Create a pop-up window to ask for Device Number and Comments.
-          - Ask the user for a file path to save the text data.
-          - Append comments and measurement parameters to the plot.
-          - Save the data in both text and Excel formats.
-         """
-                 # Retrieve additional inputs
-         device_num = self.device_num  # previously stored from the input dialog
-         user_comment = self.user_comment
-         file_path = self.save_file_path
-         plot_file_path = self.plot_file_path
-         keithley_voltage = self.keithley.query(':SOUR:VOLT:LEV:IMM:AMPL?').strip()
- 
-         comments = [
-             f"Device Number: {device_num}",
-             f"Comments: {user_comment}",
-             f"Date: {time.strftime('%m/%d/%Y')}",
-             f"Time: {time.strftime('%H:%M:%S')}",
-             f"Frequency Sweep Run Time: {sweep_run_time:.2f} s",
-             f"Total Run Time: {total_run_time:.2f} s",
-             f"Keithley Voltage: {keithley_voltage} V",
-             f"Excel Loss File: {self.excel_file_var.get() or 'None'}",
-             f"S2P Loss File: {self.s2p_file_var.get() or 'None'}"
-         ]
- 
-         n = len(comments)
-         n_left = math.ceil(n / 2)  # Number of comments in the left column
- 
-         left_x = 0.3   # x-coordinate for the left column (adjust as needed)
-         right_x = 0.7  # x-coordinate for the right column (adjust as needed)
-         y_comment_start = 0.94
-         y_comment_step = 0.02
- 
-         for i, comment in enumerate(comments):
-             if i < n_left:
-                 # Left column: use index i for y-coordinate
-                 self.fig.text(left_x, y_comment_start - i * y_comment_step, comment,
-                             wrap=True, horizontalalignment='center', fontsize=10)
-             else:
-                 # Right column: use index (i - n_left) for y-coordinate
-                 self.fig.text(right_x, y_comment_start - (i - n_left) * y_comment_step, comment,
-                             wrap=True, horizontalalignment='center', fontsize=10)
- 
-         # Maximize window if needed
-         try:
-             self.root.state('zoomed')
-         except Exception:
-             try:
-                 self.root.attributes('-fullscreen', True)
-             except Exception:
-                 pass
+        """
+        Runs in the GUI thread:  
+        - Annotate the figure  
+        - Draw the canvas *lightly*  
+        - Spawn a background thread for all heavy file I/O  
+        """
+        # --- 1) annotation (unchanged) ---
+        device_num    = self.device_num
+        user_comment  = self.user_comment
+        file_path     = self.save_file_path
+        plot_file_path= self.plot_file_path
 
-         # Manually set y-ticks for better readability
-         min_power = min(self.powers)
-         max_power = max(self.powers)
-         yticks = np.arange(np.floor(min_power/3)*3, np.ceil(max_power/3)*3+3, 3)
-         self.ax3.set_yticks(yticks)
-         self.ax3.set_ylim(min(yticks), max(yticks))
-         min_calibrated_rf = min(self.calibrated_rf)
-         max_calibrated_rf = max(self.calibrated_rf)
-         yticks = np.arange(np.floor(min_calibrated_rf/3)*3, np.ceil(max_calibrated_rf/3)*3+3, 3)
-         self.ax5.set_yticks(yticks)
-         self.ax5.set_ylim(min(yticks), max(yticks))
- 
-         # Force canvas update using draw_idle and flush events
-         # Force full update of the canvas and window
-         self.canvas.draw()
-         time.sleep(1)            # Optional small delay
-         self.root.update()         # Force a full refresh of the GUI
-         time.sleep(0.2)            # Optional small delay
- 
-             # Save the plot as an image
-         self.fig.savefig(plot_file_path)
-         self.update_message_feed(f"Data and plot saved to {file_path} and {plot_file_path}")
- 
-         # Save measurement data to a text file
-         with open(file_path, 'w') as f:
-             f.write("DEVICE NUMBER: " + str(device_num) + "\n")
-             f.write("COMMENTS: " + user_comment + "\n")
-             f.write("KEITHLEY VOLTAGE: " + str(keithley_voltage) + " V" + "\n")
-             f.write("FREQUENCY SWEEP RUN TIME: " + f"{sweep_run_time:.2f}" + " s" + "\n")
-             f.write("TOTAL RUN TIME: " + f"{total_run_time:.2f}" + " s" + "\n")
-             f.write("RF Link Loss File (.xlsx): " + str(self.excel_file_var.get() or 'None') + "\n")
-             f.write("RF Probe Loss File (.s2p): " + str(self.s2p_file_var.get() or 'None') + "\n")
-             f.write("INITIAL PHOTOCURRENT: " + str(self.photo_currents[0]) + " (mA)" + "\n")
-             f.write("STARTING WAVELENGTH FOR LASER 3: " + str(self.laser_3_var.get()) +
-                     " (nm) : STARTING WAVELENGTH FOR LASER 4: " + f"{self.laser_4_wavelengths[0]:.3f}" +
-                     " (nm) : DELAY: " + str(self.delay_var.get()) + " (s) " + "\n")
-             f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
-             f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
-             f.write("\n")
-             f.write("F_BEAT(GHz)\tI_PD (mA)\tRaw RF POW (dBm)\tTotal RF Loss (dB)\tProbe RF Loss (dB)\tLink RF Loss (dB)\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
-             for i in range(len(self.steps)):
-                 f.write(f"{self.beat_freqs[i]:<10.2f}\t{self.photo_currents[i]:<10.4e}\t{self.powers[i]:<10.2f}\t"
-                         f"{self.rf_loss[i]:<10.2f}\t{self.rf_probe_loss[i]:<10.2f}\t{self.rf_link_loss[i]:<10.2f}\t"
-                         f"{self.calibrated_rf[i]:<10.2f}\t{self.p_actuals[i]:<10.3f}\n")
- 
-         # --- Create an Excel Workbook and Sheet for the data ---
-         wb = Workbook()
-         ws = wb.active
-         ws.title = "Experiment Data"
-         ws.append(["DEVICE NUMBER", device_num])
-         ws.append(["COMMENTS", user_comment])
-         ws.append(["KEITHLEY VOLTAGE", f"{keithley_voltage} V"])
-         ws.append(["INITIAL PHOTOCURRENT", f"{self.photo_currents[0]} (mA)"])
-         ws.append(["STARTING WAVELENGTH FOR LASER 3", f"{self.laser_3_var.get()} (nm)"])
-         ws.append(["STARTING WAVELENGTH FOR LASER 4", f"{self.laser_4_wavelengths[0]:.3f} (nm)"])
-         ws.append(["DELAY", f"{self.delay_var.get()} (s)"])
-         ws.append(["FREQUENCY SWEEP RUN TIME", f"{sweep_run_time:.2f} s"])
-         ws.append(["TOTAL RUN TIME", f"{total_run_time:.2f} s"])
-         ws.append(["EXCEL LOSS FILE", self.excel_file_var.get() or 'None'])
-         ws.append(["S2P LOSS FILE", self.s2p_file_var.get() or 'None'])
-         ws.append(["DATE", time.strftime("%m/%d/%Y")])
-         ws.append(["TIME", time.strftime("%H:%M:%S")])
-         ws.append([])
-         ws.append(["F_BEAT (GHz)", "I_PD (mA)", "Raw RF POW (dBm)",
-                     "Total RF Loss (dB)", "RF Probe Loss (dB)",
-                     "RF Link Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
-         for i in range(len(self.steps)):
-             ws.append([
-                 f"{self.beat_freqs[i]:.2f}",
-                 f"{self.photo_currents[i]}",
-                 f"{self.powers[i]:.2f}",
-                 f"{self.rf_loss[i]:.2f}",
-                 f"{self.rf_probe_loss[i]:.2f}",
-                 f"{self.rf_link_loss[i]:.2f}",
-                 f"{self.calibrated_rf[i]:.2f}",
-                 f"{self.p_actuals[i]:.3f}"
-             ])
-         # Adjust column widths
-         for column in ws.columns:
-             max_length = 0
-             column = list(column)
-             for cell in column:
-                 try:
-                     if len(str(cell.value)) > max_length:
-                         max_length = len(str(cell.value))
-                 except Exception:
-                     pass
-             adjusted_width = (max_length + 2)
-             ws.column_dimensions[column[0].column_letter].width = adjusted_width
-         wb.save(file_path.replace(".txt", ".xlsx"))
-         self.update_message_feed(f"Excel data saved to {file_path.replace('.txt', '.xlsx')}")
- 
+        comments = [
+            f"Device Number: {device_num}",
+            f"Comments: {user_comment}",
+            f"Date: {time.strftime('%m/%d/%Y')}",
+            f"Time: {time.strftime('%H:%M:%S')}",
+            f"Frequency Sweep Run Time: {sweep_run_time:.2f} s",
+            f"Total Run Time: {total_run_time:.2f} s",
+            f"Keithley Voltage: {self.keithley_voltage} V",
+            f"Excel Loss File: {self.excel_file_var.get() or 'None'}",
+            f"S2P Loss File: {self.s2p_file_var.get() or 'None'}"
+        ]
+
+
+            # 1) annotate & draw on main thread
+        self._annotate_and_draw(comments)
+
+        # 2) save the figure PNG *right here* (main thread)
+        try:
+            self.fig.savefig(plot_file_path)
+        except Exception as e:
+            self.update_message_feed(f"Plot save failed: {e}")
+
+        # 3) hand off only the text + Excel work to a background thread
+        threading.Thread(
+            target=self._save_data_io,
+            args=(file_path, plot_file_path, sweep_run_time, total_run_time),
+            daemon=True
+        ).start()
+
+
+    def _annotate_and_draw(self, comments):
+        """
+        Runs on the GUI thread: update ticks, add text annotations and redraw.
+        """
+        # ---- 1) update the y-ticks on ax3 and ax5 ----
+        # raw RF power axis (ax3)
+        min_power = min(self.powers)
+        max_power = max(self.powers)
+        yticks = np.arange(
+            np.floor(min_power/3)*3,
+            np.ceil(max_power/3)*3 + 3,
+            3
+        )
+        self.ax3.set_yticks(yticks)
+        self.ax3.set_ylim(min(yticks), max(yticks))
+
+        # calibrated RF power axis (ax5)
+        min_calibrated_rf = min(self.calibrated_rf)
+        max_calibrated_rf = max(self.calibrated_rf)
+        yticks2 = np.arange(
+            np.floor(min_calibrated_rf/3)*3,
+            np.ceil(max_calibrated_rf/3)*3 + 3,
+            3
+        )
+        self.ax5.set_yticks(yticks2)
+        self.ax5.set_ylim(min(yticks2), max(yticks2))
+
+        # ---- 2) place your comments text ----
+        n = len(comments)
+        n_left = math.ceil(n/2)
+        for i, text in enumerate(comments):
+            x = 0.3 if i < n_left else 0.7
+            y = 0.94 - ((i if i < n_left else i-n_left)*0.02)
+            self.fig.text(x, y, text, wrap=True, ha='center', fontsize=10)
+
+        # ---- 3) one non-blocking redraw ----
+        self.canvas.draw_idle()
+
+
+    def _save_data_io(self, file_path, plot_file_path, sweep_run_time, total_run_time):
+        """
+        Runs in a background thread:  
+        - Save figure PNG  
+        - Write text file  
+        - Build & save Excel workbook  
+        """
+
+        # 2) write the text file
+        try:
+            with open(file_path, 'w') as f:
+                f.write("DEVICE NUMBER: " + str(self.device_num) + "\n")
+                f.write("COMMENTS: " + self.user_comment + "\n")
+                f.write("KEITHLEY VOLTAGE: " + str(self.keithley_voltage) + " V" + "\n")
+                f.write("FREQUENCY SWEEP RUN TIME: " + f"{sweep_run_time:.2f}" + " s" + "\n")
+                f.write("TOTAL RUN TIME: " + f"{total_run_time:.2f}" + " s" + "\n")
+                f.write("RF Link Loss File (.xlsx): " + str(self.excel_file_var.get() or 'None') + "\n")
+                f.write("RF Probe Loss File (.s2p): " + str(self.s2p_file_var.get() or 'None') + "\n")
+                f.write("INITIAL PHOTOCURRENT: " + str(self.photo_currents[0]) + " (mA)" + "\n")
+                f.write("STARTING WAVELENGTH FOR LASER 3: " + str(self.laser_3_var.get()) +
+                        " (nm) : STARTING WAVELENGTH FOR LASER 4: " + f"{self.laser_4_wavelengths[0]:.3f}" +
+                        " (nm) : DELAY: " + str(self.delay_var.get()) + " (s) " + "\n")
+                f.write("DATE: " + time.strftime("%m/%d/%Y") + "\n")
+                f.write("TIME: " + time.strftime("%H:%M:%S") + "\n")
+                f.write("\n")
+                f.write("F_BEAT(GHz)\tI_PD (mA)\tRaw RF POW (dBm)\tTotal RF Loss (dB)\tProbe RF Loss (dB)\tLink RF Loss (dB)\tCal RF POW (dBm)\tVOA P Actual (dBm)\n")
+                for i in range(len(self.steps)):
+                    f.write(f"{self.beat_freqs[i]:<10.2f}\t{self.photo_currents[i]:<10.4e}\t{self.powers[i]:<10.2f}\t"
+                            f"{self.rf_loss[i]:<10.2f}\t{self.rf_probe_loss[i]:<10.2f}\t{self.rf_link_loss[i]:<10.2f}\t"
+                            f"{self.calibrated_rf[i]:<10.2f}\t{self.p_actuals[i]:<10.3f}\n")
+    
+        except Exception as e:
+            self.root.after(0, lambda: self.update_message_feed(f"Text save failed: {e}"))
+
+        # 3) build & save Excel workbook
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Experiment Data"
+            ws.append(["DEVICE NUMBER", self.device_num])
+            ws.append(["COMMENTS", self.user_comment])
+            ws.append(["KEITHLEY VOLTAGE", f"{self.keithley_voltage} V"])
+            ws.append(["INITIAL PHOTOCURRENT", f"{self.photo_currents[0]} (mA)"])
+            ws.append(["STARTING WAVELENGTH FOR LASER 3", f"{self.laser_3_var.get()} (nm)"])
+            ws.append(["STARTING WAVELENGTH FOR LASER 4", f"{self.laser_4_wavelengths[0]:.3f} (nm)"])
+            ws.append(["DELAY", f"{self.delay_var.get()} (s)"])
+            ws.append(["FREQUENCY SWEEP RUN TIME", f"{sweep_run_time:.2f} s"])
+            ws.append(["TOTAL RUN TIME", f"{total_run_time:.2f} s"])
+            ws.append(["EXCEL LOSS FILE", self.excel_file_var.get() or 'None'])
+            ws.append(["S2P LOSS FILE", self.s2p_file_var.get() or 'None'])
+            ws.append(["DATE", time.strftime("%m/%d/%Y")])
+            ws.append(["TIME", time.strftime("%H:%M:%S")])
+            ws.append([])
+            ws.append(["F_BEAT (GHz)", "I_PD (mA)", "Raw RF POW (dBm)",
+                        "Total RF Loss (dB)", "RF Probe Loss (dB)",
+                        "RF Link Loss (dB)", "Cal RF POW (dBm)", "VOA P Actual (dBm)"])
+            for i in range(len(self.steps)):
+                ws.append([
+                    f"{self.beat_freqs[i]:.2f}",
+                    f"{self.photo_currents[i]}",
+                    f"{self.powers[i]:.2f}",
+                    f"{self.rf_loss[i]:.2f}",
+                    f"{self.rf_probe_loss[i]:.2f}",
+                    f"{self.rf_link_loss[i]:.2f}",
+                    f"{self.calibrated_rf[i]:.2f}",
+                    f"{self.p_actuals[i]:.3f}"
+                ])
+            # Adjust column widths
+            for column in ws.columns:
+                max_length = 0
+                column = list(column)
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except Exception:
+                        pass
+                adjusted_width = (max_length + 2)
+                ws.column_dimensions[column[0].column_letter].width = adjusted_width
+            wb.save(file_path.replace(".txt", ".xlsx"))
+            self.update_message_feed(f"Excel data saved to {file_path.replace('.txt', '.xlsx')}")
+    
+        except Exception as e:
+            self.root.after(0, lambda: self.update_message_feed(f"Excel save failed: {e}"))
+
+        # 4) all done!
+        self.root.after(0, lambda: self.update_message_feed(
+            f"Data & plot saved to {file_path} and {plot_file_path}"
+        ))
  
     def update_plots(self):
          """
@@ -1245,5 +1279,4 @@ class MeasurementApp:
 if __name__ == '__main__':
     app = MeasurementApp()
     app.run()
-    app.update_message_feed("Application started.")
-    app.update_message_feed("Please select the measurement parameters.")
+    app.close_instruments()
