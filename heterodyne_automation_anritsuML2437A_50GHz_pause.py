@@ -33,7 +33,7 @@ class MeasurementApp:
         self.wavelength_meter_GPIB = 'GPIB0::20::INSTR'      # Wavelength meter
         self.spectrum_analyzer_GPIB = 'GPIB0::18::INSTR'     # Spectrum analyzer
         self.keithley_GPIB = 'GPIB0::24::INSTR'              # Keithley source meter
-        self.RS_power_sensor_GPIB = 'RSNRP::0x00a8::100940::INSTR'  # R&S power sensor
+        self.power_sensor_GPIB = 'GPIB0::13::INSTR'  # Anritsu power sensor
         self.voa_GPIB = 'GPIB0::26::INSTR'                   # VOA
 
         # Instrument objects (to be opened later)
@@ -41,7 +41,7 @@ class MeasurementApp:
         self.wavelength_meter = None
         self.spectrum_analyzer = None
         self.keithley = None
-        self.RS_power_sensor = None
+        self.power_sensor = None
         self.voa = None
 
         # Data containers for measurements and calibration
@@ -61,7 +61,6 @@ class MeasurementApp:
         # Threading events for controlling data collection and plot updates
         self.stop_event = threading.Event()
         self.data_ready_event = threading.Event()
-        self.pause_event = threading.Event()
 
         # Initialize main Tkinter window (full-screen, or "zoomed")
         self.root = tk.Tk()
@@ -315,15 +314,15 @@ class MeasurementApp:
             self.wavelength_meter = self.rm.open_resource(self.wavelength_meter_GPIB)
             self.spectrum_analyzer = self.rm.open_resource(self.spectrum_analyzer_GPIB)
             self.keithley = self.rm.open_resource(self.keithley_GPIB)
-            self.RS_power_sensor = self.rm.open_resource(self.RS_power_sensor_GPIB)
+            self.power_sensor = self.rm.open_resource(self.power_sensor_GPIB)
             self.voa = self.rm.open_resource(self.voa_GPIB)
 
-            self.RS_power_sensor.timeout = 15000
-            self.ecl_adapter.timeout = 5000
-            self.wavelength_meter.timeout = 5000
-            self.spectrum_analyzer.timeout = 5000
-            self.keithley.timeout = 5000
-            self.voa.timeout = 5000
+            self.power_sensor.timeout = 15000
+            self.ecl_adapter.timeout = 10000
+            self.wavelength_meter.timeout = 10000
+            self.spectrum_analyzer.timeout = 10000
+            self.keithley.timeout = 10000
+            self.voa.timeout = 10000
         
             self.update_message_feed("Successfully connected to all VISA devices.")
         except Exception as e:
@@ -343,9 +342,9 @@ class MeasurementApp:
             if self.keithley is not None:
                 self.keithley.close()
                 self.keithley = None
-            if self.RS_power_sensor is not None:
-                self.RS_power_sensor.close()
-                self.RS_power_sensor = None
+            if self.power_sensor is not None:
+                self.power_sensor.close()
+                self.power_sensor = None
             if self.voa is not None:
                 self.voa.close()
                 self.voa = None
@@ -413,8 +412,8 @@ class MeasurementApp:
                 self.update_message_feed("VOA is currently enabled, disable before zeroing power meter...")
                 raise Exception("VOA is enabled")
             self.update_message_feed("Zeroing power sensor...")
-            # Assuming RS_power_sensor is your power meter:
-            self.RS_power_sensor.write('CAL:ZERO:AUTO ONCE')
+            # Anritsu ML2437A Power Meter:
+            self.power_sensor.write('ZERO A')
             time.sleep(10)  # wait 10 seconds for the zeroing process to complete
             self.update_message_feed("Power sensor zeroing completed.")
             self.voa.write(":SYSTem:LOCal")
@@ -427,25 +426,25 @@ class MeasurementApp:
         """
         for attempt in range(1, max_attempts+1):
             try:
-                self.RS_power_sensor.write('INIT:CONT OFF')
-                self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
-                self.RS_power_sensor.write(f'SENS:FREQ {beat_freq}e9')
-                self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
-                self.RS_power_sensor.write('SENS:AVER:STAT ON')
-                self.RS_power_sensor.write('SENS:AVER:TCON REP')
-                self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-1')
+                self.power_sensor.write(f"CFFRQ A,{beat_freq}E9")
+                self.power_sensor.write('CFSRC A,FREQ')
+                
                 time.sleep(0.2)
 
                 readings = []
                 for _ in range(5):
-                    self.RS_power_sensor.write('INIT:IMM')
-                    output = self.RS_power_sensor.query('TRIG:IMM')
-                    watts = float(output.split(',')[0])
-                    readings.append(watts)
+                    self.power_sensor.write('STA 1')
+                    time.sleep(0.1)  # Allow time for the measurement to stabilize
+
+                    reading = self.power_sensor.query('O 1')
+                    pwr_dbm = float(reading.strip())
+
+                    # Append dBm reading for averaging
+                    readings.append(pwr_dbm)
                     time.sleep(0.1)
 
-                avg_watts = sum(readings) / len(readings)
-                return math.log10(avg_watts) * 10 + 30  # convert to dBm
+                avg_pow = sum(readings) / len(readings)
+                return avg_pow
 
             except pyvisa.errors.VisaIOError:
                 self.update_message_feed(
@@ -717,14 +716,6 @@ class MeasurementApp:
             else:
                 print("Delta wavelength mode command did not complete as expected.")
             time.sleep(1)
-
-            # Configure the sensor before measurement attempts
-            self.RS_power_sensor.write('INIT:CONT OFF')
-            self.RS_power_sensor.write('SENS:FUNC "POW:AVG"')
-            self.RS_power_sensor.write('SENS:AVER:COUN:AUTO ON')
-            self.RS_power_sensor.write('SENS:AVER:STAT ON')
-            self.RS_power_sensor.write('SENS:AVER:TCON REP')
-            self.RS_power_sensor.write('SENS:POW:AVG:APER 1e-1')
 
             # Additional variables to track consecutive increases
             consecutive_increases = 0
